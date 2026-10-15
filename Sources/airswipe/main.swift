@@ -98,6 +98,9 @@ let status = StatusItemController(mode: options.live ? "live" : "dry run")
 var debugOrigin: Double?
 var debugFrames = 0
 var debugLastPrint = 0.0
+/// The latest move the engine turned down since the last debug line, so a
+/// rejection that lasts one frame still shows up.
+var debugRejection: String?
 var armedNow = false
 
 /// "[ 12.3s] " in debug mode, so events can be lined up with the frame lines.
@@ -119,14 +122,21 @@ let camera = CameraSource { pixelBuffer, time in
         if time - debugLastPrint >= 0.1 {
             let fps = Double(debugFrames) / (time - debugLastPrint)
             let state = armedNow ? "ARMED" : "idle "
-            let line = "\(Int(fps.rounded()))fps \(engine.diagnostics) | \(tracker.diagnostics)"
+            let rejection = debugRejection.map { " | REJECTED \($0)" } ?? ""
+            let line = "\(Int(fps.rounded()))fps \(engine.diagnostics) | \(tracker.diagnostics)\(rejection)"
             print("\(stamp(time))\(state) \(line)")
             debugFrames = 0
             debugLastPrint = time
+            debugRejection = nil
         }
     }
 
-    for event in engine.process(sample, at: time) {
+    let events = engine.process(sample, at: time)
+    if options.debug, let rejection = engine.lastRejection {
+        debugRejection = rejection
+    }
+
+    for event in events {
         switch event {
         case .armed:
             armedNow = true

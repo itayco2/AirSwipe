@@ -51,7 +51,7 @@ the hand.
 
 ## Status
 
-- **Gesture logic** (`AirSwipeCore`): built test-first, 88 passing tests.
+- **Gesture logic** (`AirSwipeCore`): built test-first, 93 passing tests.
 - **Camera layer** (`airswipe`): run on a real camera over several sessions, and
   the thresholds were set from those logs. Live swipes were confirmed working.
   Flicks are new and untested on a camera, so treat their feel (distance, screen
@@ -107,7 +107,7 @@ goes to whatever is under the mouse pointer, so rest it over the page.
 | `--invert-scroll` | Flip the scroll direction (flicks and fine scroll) |
 | `--rate-scroll` | Fine scroll by hand height (speed) instead of following the hand |
 | `--no-mirror` | Do not mirror the camera horizontally |
-| `--debug` | Print what the camera layer sees about ten times a second (engine mode and return-guard state, hand found, per-finger straightness, pose, knuckle position, armed state) |
+| `--debug` | Print what the camera layer sees about ten times a second (engine mode and return-guard state, hand found, per-finger straightness, pose, knuckle position, armed state). When a move was big enough to be a stroke but was turned down, the line ends with `REJECTED` and the reason |
 
 ## If it feels wrong
 
@@ -119,6 +119,7 @@ goes to whatever is under the mouse pointer, so rest it over the page.
 | A flick scrolls too far or too little | `pageFraction` in `CGEventSink` (default 0.8 of the screen height) |
 | Swipes are missed | Lower `swipeMinDistance` (default 0.12 of the frame) or raise `swipeWindow` |
 | Flicks are missed, or a flick down does not register | Lower `flickMinDistance` (default 0.08 of the frame). Hold your hand a little higher in the picture so there is room to move down. Flick up, then *carry on* down past the middle |
+| A flick up or down is missed, or comes out the wrong way | Run with `--debug` and make the move. A `REJECTED` tail names the cause: `mode is …` (the pose was not one finger for long enough), `held by return guard` (the hand had not come back, or the carry-on was too short), `held by cooldown`, or `too far off the axis`. Also check `y=`: a hand resting near 0 has no room to move down |
 | Diagonal moves fire when they shouldn't, or are ignored when they should count | `swipeMaxVerticalRatio` (how far off-axis a stroke may drift, default 0.6) |
 | It never arms | Hold the palm flat and still, face the camera, add light |
 | One or two fingers are not recognized | `--debug`: `str=` is each finger's straightness. Extended fingers read about 0.98 to 1.00 and curled ones 0.9 or less. Curl the other fingers tighter, or tune `extendedStraightness` / `curledStraightness` in `HandPoseClassifier` |

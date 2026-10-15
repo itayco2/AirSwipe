@@ -839,3 +839,55 @@ struct FlickTests {
         #expect(flicks(in: down) == [.flick(.down)])
     }
 }
+
+// MARK: - Diagnostics
+
+/// `lastRejection` is a debugging aid: when a move is big enough to be a stroke
+/// but is turned down, it says why, so a run on a real camera can show whether a
+/// missing flick was held by the guard, the cooldown, the pose, or the angle.
+@Suite("Diagnostics")
+struct DiagnosticsTests {
+    @Test("a hand at rest has nothing rejected")
+    func restingHandRejectsNothing() {
+        var rig = Rig.swiping()
+        rig.hold(for: 0.5)
+        #expect(rig.engine.lastRejection == nil)
+    }
+
+    @Test("a stroke made in the wrong pose says which mode it was in")
+    func wrongModeIsExplained() {
+        var rig = Rig.armed()
+        rig.move(toX: 0.5, toY: 0.72, over: 0.25)
+        let why = rig.engine.lastRejection ?? ""
+        #expect(why.contains("up"))
+        #expect(why.contains("mode is openPalm"))
+    }
+
+    @Test("a second move the same way before the return is reported as held")
+    func sameWayWhileGuardedIsExplained() {
+        var rig = Rig.swiping()
+        rig.move(toX: 0.5, toY: 0.72, over: 0.25)
+        rig.move(toX: 0.5, toY: 0.88, over: 0.20)
+        let why = rig.engine.lastRejection ?? ""
+        #expect(why.contains("up"))
+        #expect(why.contains("same way"))
+    }
+
+    @Test("a return that stops short of a full stroke past home reports the shortfall")
+    func shortCarryOnIsExplained() {
+        var rig = Rig.swiping()
+        rig.move(toX: 0.5, toY: 0.72, over: 0.25)
+        // Back down past home (0.5) by 0.05: a return that overshoots, not a flick.
+        rig.move(toX: 0.5, toY: 0.45, over: 0.20)
+        let why = rig.engine.lastRejection ?? ""
+        #expect(why.contains("down"))
+        #expect(why.contains("past home"))
+    }
+
+    @Test("a diagonal move says it was too far off the axis")
+    func diagonalIsExplained() {
+        var rig = Rig.swiping()
+        rig.move(toX: 0.68, toY: 0.68, over: 0.25)
+        #expect((rig.engine.lastRejection ?? "").contains("off the axis"))
+    }
+}

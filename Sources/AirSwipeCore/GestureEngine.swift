@@ -79,6 +79,11 @@ public final class GestureEngine {
     /// Why the engine most recently disarmed, so the app can explain it.
     public private(set) var lastDisarmReason: DisarmReason?
 
+    /// For debugging: set when the latest frame held a move big enough to be a
+    /// stroke that was not accepted, with the reason and the numbers behind it.
+    /// It is nil on any frame where nothing was turned down.
+    public private(set) var lastRejection: String?
+
     public init(config: GestureConfig = GestureConfig()) {
         self.config = config
     }
@@ -288,11 +293,11 @@ public final class GestureEngine {
     /// stroke past where the previous one began. That is deliberate, not a return,
     /// and it is what lets an up-and-down or side-to-side bounce work.
     private func detectStroke(_ sample: HandSample, at time: TimeInterval) -> Stroke? {
+        lastRejection = nil
         window.append((time, sample.x, sample.y))
         window.removeAll { time - $0.time > config.swipeWindow }
 
-        guard mode == config.swipePose,
-              let lowX = window.min(by: { $0.x < $1.x }),
+        guard let lowX = window.min(by: { $0.x < $1.x }),
               let highX = window.max(by: { $0.x < $1.x }),
               let lowY = window.min(by: { $0.y < $1.y }),
               let highY = window.max(by: { $0.y < $1.y }) else {
@@ -319,7 +324,12 @@ public final class GestureEngine {
 
         let axis: Axis
         switch (isSideways, isVertical) {
-        case (false, false): return nil
+        case (false, false):
+            if travelX >= config.swipeMinDistance || travelY >= config.flickMinDistance {
+                lastRejection = String(format: "diagonal: across %.2f, up/down %.2f, too far off the axis",
+                                       travelX, travelY)
+            }
+            return nil
         case (true, false): axis = .horizontal
         case (false, true): axis = .vertical
         case (true, true):
@@ -331,17 +341,42 @@ public final class GestureEngine {
         let isPositive = axis == .horizontal ? goesRight : goesUp
         let direction = isPositive ? 1.0 : -1.0
         let current = value(axis, x: sample.x, y: sample.y)
+        let name: String
+        switch (axis, isPositive) {
+        case (.horizontal, true): name = "right"
+        case (.horizontal, false): name = "left"
+        case (.vertical, true): name = "up"
+        case (.vertical, false): name = "down"
+        }
+        let travel = axis == .horizontal ? travelX : travelY
+
+        guard mode == config.swipePose else {
+            lastRejection = String(format: "%@ %.2f ignored: mode is %@, not %@ (pose now %@)",
+                                   name, travel, "\(mode)", "\(config.swipePose)", "\(sample.pose)")
+            return nil
+        }
 
         var isCarryOn = false
         if awaitingReturn {
             // Only a carry-on counts while a return is pending: same axis, the
             // opposite way, and a full stroke past where the previous one began.
+            let pastHome = (returnHome - current) * returnDirection
             guard axis == returnAxis, direction == -returnDirection,
-                  (returnHome - current) * returnDirection >= minDistance(for: axis) else {
+                  pastHome >= minDistance(for: axis) else {
+                if axis != returnAxis {
+                    lastRejection = String(format: "%@ %.2f held: the return guard is on the other axis", name, travel)
+                } else if direction == returnDirection {
+                    lastRejection = String(format: "%@ %.2f held: same way as the last stroke", name, travel)
+                } else {
+                    lastRejection = String(format: "%@ %.2f held by return guard: %.2f past home %.2f, needs %.2f",
+                                           name, travel, pastHome, returnHome, minDistance(for: axis))
+                }
                 return nil
             }
             isCarryOn = true
         } else if time - lastStrokeTime < config.swipeCooldown {
+            lastRejection = String(format: "%@ %.2f held by cooldown, %.2fs left", name, travel,
+                                   config.swipeCooldown - (time - lastStrokeTime))
             return nil
         }
 
@@ -409,6 +444,7 @@ public final class GestureEngine {
         window.removeAll()
         previousTime = nil
         followY = nil
+        lastRejection = nil
     }
 
     private func disarm(_ reason: DisarmReason) -> [GestureEvent] {
