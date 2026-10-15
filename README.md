@@ -9,26 +9,32 @@ the built-in camera and Apple's Vision framework, and everything runs on-device.
 |---|---|
 | ✋ Open palm, held still ~0.5 s | **Start.** Menu-bar icon shows `ON` |
 | ☝️ One finger, move right / left | **Swipe:** Back / Forward (`Cmd+[` / `Cmd+]`) |
-| ✌️ Two fingers, raise / lower your hand | **Scroll** up / down, faster the farther you go |
+| ✌️ Two fingers, move your hand up / down | **Scroll:** the page follows your hand |
 | ✊ Fist, held ~0.5 s (or hand out of view) | **Stop** |
 
 The pose decides what a movement means, so gestures can't be confused: sideways
-motion only swipes in the one-finger pose, and height only scrolls in the
+motion only swipes in the one-finger pose, and up/down motion only scrolls in the
 two-finger pose. A pose has to be steady for a moment before it counts, so a
-flicker between poses can't switch modes. Scroll speed is measured from where you
-first showed two fingers.
+flicker between poses can't switch modes.
+
+**Scrolling follows your hand,** like two fingers on a trackpad: move up and the
+page scrolls up, move down and it scrolls down, hold still and it stops. To go
+farther than your arm reaches, switch to an open palm, reposition, and show two
+fingers again. (`--rate-scroll` restores the older model where hand height sets
+the speed.)
 
 **The return stroke never swipes.** After a swipe, further swipes wait until your
-hand settles back near where that swipe started (the middle). The guard also
-lifts if you rest anywhere for about 1.5 s, or after 3 s, so it can't get stuck.
+hand is back at the middle and has turned around or slowed. Your hand can come
+back and go straight into the next swipe with no pause. The guard also lifts if
+you rest anywhere for about 1.5 s, or after 3 s, so it can't get stuck.
 
 ## Status
 
-- **Gesture logic** (`AirSwipeCore`): built test-first, 51 passing tests.
-- **Camera layer** (`airswipe`): run on a real camera once. Tracking, arming,
-  swipe right, fist and hand-out-of-view worked in a debug log. The finger-count
-  thresholds were derived from that log (open palm, two fingers, fist); the
-  **one-finger pose has not been seen on a real hand yet**, so expect to tune.
+- **Gesture logic** (`AirSwipeCore`): built test-first, 67 passing tests.
+- **Camera layer** (`airswipe`): run on a real camera over several sessions, and
+  the thresholds were tuned from those logs. Swipes, scroll, arming and the fist
+  all worked in the last debug run. Treat feel (scroll gain, swipe distance) as
+  still tunable.
 
 ## Requirements
 
@@ -47,7 +53,9 @@ terminal app. `--live` also needs **Accessibility** access for the same app
 (System Settings > Privacy & Security > Accessibility); without it macOS drops
 the events silently.
 
-Start with the dry run and watch the messages before using `--live`.
+Start with the dry run and watch the messages before using `--live`. In live mode
+keep a browser in front: `Cmd+[` and `Cmd+]` are indent and outdent in many code
+editors.
 
 ## Test checklist (about 3 minutes)
 
@@ -58,13 +66,12 @@ Start with the dry run and watch the messages before using `--live`.
    to **your right**. Expect `swipe right`, then `would go BACK`. Bring your hand
    back to the middle: **nothing should fire**. Then swipe left: `swipe left`,
    then `would go FORWARD`.
-5. Show **two fingers** (index and middle up). Raise your hand: `would scroll UP`.
-   Lower it: `would scroll DOWN`.
+5. Show **two fingers** (index and middle up). Move your hand **up** a little:
+   `would scroll UP`. Move it **down**: `would scroll DOWN`. Hold still: nothing.
 6. Go back to an open palm and move around. Nothing should happen.
-7. Make a fist for about half a second. Expect `disarmed`.
-8. If something is off, run with `--debug` and look at the `pose=` field: it
-   should read `openPalm`, `oneFinger`, `twoFingers` or `fist` for the pose you
-   are showing.
+7. Make a fist for about half a second. Expect `disarmed (fist held)`.
+8. If something is off, run with `--debug` and look at `mode=` and `pose=`: they
+   should read `oneFinger` / `twoFingers` for the pose you are showing.
 
 ## Options
 
@@ -74,8 +81,9 @@ Start with the dry run and watch the messages before using `--live`.
 | `--live` | Post real key and scroll events |
 | `--desktops` | Swipes switch desktops (`Ctrl+←/→`) instead of back/forward |
 | `--invert-scroll` | Flip the scroll direction |
+| `--rate-scroll` | Scroll by hand height (speed) instead of following the hand |
 | `--no-mirror` | Do not mirror the camera horizontally |
-| `--debug` | Print what the camera layer sees about ten times a second (hand found, per-finger reach ratios, pose, palm position, armed state) |
+| `--debug` | Print what the camera layer sees about ten times a second (engine mode and return-guard state, hand found, per-finger reach ratios, pose, palm and fingertip position, armed state) |
 
 ## If it feels wrong
 
@@ -86,9 +94,10 @@ Start with the dry run and watch the messages before using `--live`.
 | It never arms | Hold the palm flat and still, face the camera, add light |
 | One or two fingers are not recognized | `--debug`: the extended fingers should show a ratio of about 1.5 or more and the curled ones about 1.1 or less. Curl the other fingers tighter, or tune `extendedRatio` / `curledRatio` in `HandPoseClassifier` |
 | It switches modes too slowly or too eagerly | `poseStableDuration` in `GestureConfig` |
-| Swipes are missed | Lower `swipeMinDistance` or `swipeMaxVerticalRatio` |
+| Swipes are missed | Lower `swipeMinDistance` (default 0.12 of the frame) or raise `swipeWindow` |
 | A swipe is ignored right after another one | The return guard is waiting for your hand to come back to the middle. Return there, or rest about 1.5 s. Tune `swipeReturnGuard` and `swipeHomeRadius` |
-| Scroll creeps with your hand at rest | Raise `scrollDeadZone` |
+| Scroll is too fast or too slow | `scrollFollowGain` (default 2.5) |
+| Scroll jitters with your hand at rest | Raise `scrollFollowDeadband` or lower `scrollSmoothing` |
 
 Every threshold is a field of `GestureConfig` in
 `Sources/AirSwipeCore/Types.swift`, with times in seconds and distances as a
@@ -119,6 +128,8 @@ Design and plan: [`docs/superpowers/specs`](docs/superpowers/specs/2026-10-15-ai
 - Poses come from the reach of each finger past its knuckle, so they are a
   geometric guess that may need tuning for your hands and lighting. The thumb is
   ignored.
+- If your hand leaves the frame for about a second it stops (`disarmed (hand out
+  of view)`), so keep it inside the picture.
 - It sends keyboard shortcuts, not true trackpad gestures, so it works in apps
   that honor `Cmd+[` / `Cmd+]`.
 - Not packaged as an `.app`, not signed or notarized.

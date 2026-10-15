@@ -13,7 +13,7 @@ built-in camera: the trackpad's swipe and scroll, without touching it.
 |---|---|
 | Open palm held still ≈0.5 s | **Start.** Arms the app. The menu-bar icon changes. |
 | One finger (index), fast horizontal move | Hand moves right → Back (`Cmd+[`). Hand moves left → Forward (`Cmd+]`). `--desktops` maps to `ctrl+←/→` instead. |
-| Two fingers (index and middle), hand above or below where the pose appeared | Scrolls up or down. Speed grows with distance, with a dead zone around neutral. |
+| Two fingers (index and middle), hand moving up or down | Scrolls up or down: the page follows the hand and stops when it does. `--rate-scroll` restores the earlier model where height above or below the pose's start sets speed. |
 | Fist held ≥0.5 s, hand out of frame ≥1 s, or ~15 s with no gesture | **Stop.** Disarms. Re-arm by holding an open palm again. |
 
 The number of fingers is the command. A pose only becomes the mode once it has
