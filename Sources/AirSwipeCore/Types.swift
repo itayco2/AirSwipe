@@ -76,6 +76,21 @@ public struct GestureConfig: Equatable {
     public var swipeMaxVerticalRatio: Double = 0.6
     public var swipeCooldown: Double = 0.7
 
+    // Return guard: after a swipe the hand comes back toward where it started, and
+    // that return must not swipe the other way. Swipes are held off until the hand
+    // settles near the swipe's origin, rests elsewhere, or the guard expires.
+    /// How close to the swipe's origin the hand must settle. Must stay below
+    /// `swipeMinDistance`, or the end of a swipe would already count as "home".
+    public var swipeHomeRadius: Double = 0.15
+    /// How long the hand must stay still near the origin to count as returned.
+    public var swipeHomeDwell: Double = 0.15
+    /// How long the hand must stay still anywhere else to lift the guard.
+    public var swipeRestDuration: Double = 1.5
+    /// The guard lifts by itself this long after the swipe.
+    public var swipeReturnGuard: Double = 3.0
+    /// How far the hand may drift and still count as "still".
+    public var swipeDwellRadius: Double = 0.04
+
     // Scroll
     public var scrollDeadZone: Double = 0.06
     public var scrollFullSpeedOffset: Double = 0.30

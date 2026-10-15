@@ -233,6 +233,77 @@ struct SwipeTests {
         #expect(swipes(in: second) == [.swipe(.left)])
     }
 
+    // User report: bringing the hand back to the middle swiped the other way.
+    @Test("returning to the middle after a pause is not a swipe")
+    func returnToMiddleIsNotASwipe() {
+        var rig = Rig.swiping()
+        let first = rig.move(toX: 0.80, toY: 0.5, over: 0.2)
+        #expect(swipes(in: first) == [.swipe(.right)])
+        rig.hold(for: 1.0)
+        let back = rig.move(toX: 0.50, toY: 0.5, over: 0.25)
+        #expect(swipes(in: back).isEmpty)
+    }
+
+    // Found by instrumenting the sequence test: the blocked return stroke was still
+    // in the swipe window, so it fired the moment the hand settled and the guard lifted.
+    @Test("settling in the middle after the return does not swipe by itself")
+    func settlingDoesNotReleaseTheReturnAsASwipe() {
+        var rig = Rig.swiping()
+        rig.move(toX: 0.80, toY: 0.5, over: 0.2)
+        rig.hold(for: 1.0)
+        rig.move(toX: 0.50, toY: 0.5, over: 0.25)
+        let settled = rig.hold(for: 1.0)
+        #expect(swipes(in: settled).isEmpty)
+    }
+
+    @Test("a return that overshoots the middle is not a swipe either")
+    func overshootingReturnIsNotASwipe() {
+        var rig = Rig.swiping()
+        rig.move(toX: 0.80, toY: 0.5, over: 0.2)
+        rig.hold(for: 1.0)
+        let back = rig.move(toX: 0.30, toY: 0.5, over: 0.3)
+        #expect(swipes(in: back).isEmpty)
+    }
+
+    @Test("once the hand has settled in the middle, swipes work in both directions again")
+    func swipesWorkAfterSettlingInTheMiddle() {
+        var rig = Rig.swiping()
+        var events: [GestureEvent] = []
+        // Right, back to the middle, right again, back to the middle, then left.
+        // A return that leaked through as a swipe would show up as an extra left.
+        events += rig.move(toX: 0.80, toY: 0.5, over: 0.2)
+        events += rig.hold(for: 1.0)
+        events += rig.move(toX: 0.50, toY: 0.5, over: 0.25)
+        events += rig.hold(for: 0.9)
+        events += rig.move(toX: 0.80, toY: 0.5, over: 0.2)
+        events += rig.hold(for: 1.0)
+        events += rig.move(toX: 0.50, toY: 0.5, over: 0.25)
+        events += rig.hold(for: 0.9)
+        events += rig.move(toX: 0.20, toY: 0.5, over: 0.2)
+        #expect(swipes(in: events) == [.swipe(.right), .swipe(.right), .swipe(.left)])
+    }
+
+    @Test("resting away from the middle for a moment lets swipes work from there")
+    func restingAwayLiftsTheReturnGuard() {
+        var rig = Rig.swiping()
+        rig.move(toX: 0.80, toY: 0.5, over: 0.2)
+        rig.hold(for: 2.0)
+        let swipe = rig.move(toX: 0.50, toY: 0.5, over: 0.2)
+        #expect(swipes(in: swipe) == [.swipe(.left)])
+    }
+
+    @Test("the return guard expires on its own even if the hand keeps moving")
+    func returnGuardExpires() {
+        var rig = Rig.swiping()
+        rig.move(toX: 0.80, toY: 0.5, over: 0.2)
+        for _ in 0..<4 {
+            rig.move(toX: 0.74, toY: 0.5, over: 0.4)
+            rig.move(toX: 0.86, toY: 0.5, over: 0.4)
+        }
+        let swipe = rig.move(toX: 0.56, toY: 0.5, over: 0.2)
+        #expect(swipes(in: swipe) == [.swipe(.left)])
+    }
+
     // Field evidence: during a fast swipe the fingers curl or tilt, so the pose
     // reads as something else for a few frames. That must not cancel the swipe.
     @Test("a pose flicker in the middle of a swipe does not cancel it")

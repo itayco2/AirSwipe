@@ -46,6 +46,14 @@ public final class GestureEngine {
     private var window: [(time: TimeInterval, x: Double, y: Double)] = []
     private var lastSwipeTime: TimeInterval = -.infinity
 
+    // Armed: the return guard. After a swipe the hand comes back toward where it
+    // started, and that return must not swipe the other way.
+    private var awaitingReturn = false
+    private var returnHomeX = 0.5
+    private var guardSince: TimeInterval = 0
+    private var dwellX = 0.5
+    private var dwellSince: TimeInterval = 0
+
     // Armed: signals that lead to disarming.
     private var lastActivity: TimeInterval = 0
     private var fistSince: TimeInterval?
@@ -85,6 +93,7 @@ public final class GestureEngine {
                 holdAnchor = nil
                 lastActivity = time
                 lastSwipeTime = -.infinity
+                awaitingReturn = false
                 mode = .openPalm
                 candidatePose = .openPalm
                 candidateSince = time
@@ -128,6 +137,7 @@ public final class GestureEngine {
         }
 
         updateMode(for: sample, at: time)
+        updateReturnGuard(for: sample, at: time)
 
         // Clamp so a long gap (dropped frames) cannot produce a huge scroll jump.
         let dt = min(max(time - (previousTime ?? time), 0), config.maxSampleGap)
@@ -163,6 +173,32 @@ public final class GestureEngine {
         }
     }
 
+    /// While a swipe's return is pending, watch for the hand to come to rest. The
+    /// guard lifts when the hand has settled back near where the swipe started
+    /// (the middle), when it has rested anywhere for a while, or on its own after
+    /// `swipeReturnGuard`, so it can never leave swiping stuck off.
+    private func updateReturnGuard(for sample: HandSample, at time: TimeInterval) {
+        guard awaitingReturn else { return }
+
+        if abs(sample.x - dwellX) > config.swipeDwellRadius {
+            dwellX = sample.x
+            dwellSince = time
+        }
+        let dwell = time - dwellSince
+
+        let settledAtHome = abs(dwellX - returnHomeX) <= config.swipeHomeRadius
+            && dwell >= config.swipeHomeDwell
+        let restedAway = dwell >= config.swipeRestDuration
+        let expired = time - guardSince >= config.swipeReturnGuard
+
+        if settledAtHome || restedAway || expired {
+            awaitingReturn = false
+            // The window still holds the return stroke. Left in place it would
+            // fire as a swipe the instant the guard lifts, so forget it.
+            window.removeAll()
+        }
+    }
+
     private func gestureEvents(for sample: HandSample, at time: TimeInterval,
                                dt: Double) -> [GestureEvent] {
         if let direction = detectSwipe(sample, at: time) {
@@ -174,12 +210,15 @@ public final class GestureEngine {
 
     /// A swipe is a fast, mostly horizontal move across the recent window, made
     /// in swipe mode. After one fires, further swipes are suppressed for
-    /// `swipeCooldown`, which is what swallows the hand's return stroke.
+    /// `swipeCooldown`, and then until the hand has returned (see
+    /// `updateReturnGuard`), which is what keeps the return stroke from swiping
+    /// the other way.
     private func detectSwipe(_ sample: HandSample, at time: TimeInterval) -> SwipeDirection? {
         window.append((time, sample.x, sample.y))
         window.removeAll { time - $0.time > config.swipeWindow }
 
         guard mode == config.swipePose,
+              !awaitingReturn,
               time - lastSwipeTime >= config.swipeCooldown,
               let oldest = window.first else {
             return nil
@@ -193,6 +232,11 @@ public final class GestureEngine {
         }
 
         lastSwipeTime = time
+        awaitingReturn = true
+        returnHomeX = oldest.x
+        guardSince = time
+        dwellX = sample.x
+        dwellSince = time
         window.removeAll()
         return dx > 0 ? .right : .left
     }
@@ -224,6 +268,7 @@ public final class GestureEngine {
         holdAnchor = nil
         fistSince = nil
         lostSince = nil
+        awaitingReturn = false
         mode = .other
         resetTracking()
         return [.disarmed]
