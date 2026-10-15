@@ -9,6 +9,8 @@ struct Rig {
     private(set) var time = 0.0
     private(set) var x = 0.5
     private(set) var y = 0.5
+    /// The pose shown by `hold` and `move` unless one is passed explicitly.
+    var pose: HandPose = .openPalm
 
     init(config: GestureConfig = GestureConfig()) {
         engine = GestureEngine(config: config)
@@ -17,14 +19,15 @@ struct Rig {
     /// Keep the hand where it is (or at an explicit spot) for `seconds`.
     @discardableResult
     mutating func hold(x newX: Double? = nil, y newY: Double? = nil,
-                       for seconds: Double, open: Bool = true) -> [GestureEvent] {
-        move(toX: newX ?? x, toY: newY ?? y, over: seconds, open: open)
+                       for seconds: Double, pose override: HandPose? = nil) -> [GestureEvent] {
+        move(toX: newX ?? x, toY: newY ?? y, over: seconds, pose: override)
     }
 
     /// Glide in a straight line to (toX, toY) over `seconds`.
     @discardableResult
     mutating func move(toX: Double, toY: Double, over seconds: Double,
-                       open: Bool = true) -> [GestureEvent] {
+                       pose override: HandPose? = nil) -> [GestureEvent] {
+        let shown = override ?? pose
         let frames = max(1, Int((seconds * fps).rounded()))
         let (startX, startY) = (x, y)
         var events: [GestureEvent] = []
@@ -33,7 +36,7 @@ struct Rig {
             x = startX + (toX - startX) * t
             y = startY + (toY - startY) * t
             time += 1 / fps
-            events += engine.process(HandSample(x: x, y: y, isOpen: open), at: time)
+            events += engine.process(HandSample(x: x, y: y, pose: shown), at: time)
         }
         return events
     }
@@ -49,7 +52,55 @@ struct Rig {
         }
         return events
     }
+
+    /// Switch to `newPose` in place and hold it long enough to become the mode.
+    @discardableResult
+    mutating func show(_ newPose: HandPose) -> [GestureEvent] {
+        pose = newPose
+        return hold(for: 0.3)
+    }
 }
+
+extension Rig {
+    /// Armed, with an open palm resting mid-frame.
+    static func armed(config: GestureConfig = GestureConfig()) -> Rig {
+        var rig = Rig(config: config)
+        rig.hold(for: 0.8)
+        return rig
+    }
+
+    /// Armed and showing one finger: swipe mode.
+    static func swiping(config: GestureConfig = GestureConfig()) -> Rig {
+        var rig = armed(config: config)
+        rig.show(.oneFinger)
+        return rig
+    }
+
+    /// Armed and showing two fingers: scroll mode, neutral at mid-frame.
+    static func scrolling(config: GestureConfig = GestureConfig()) -> Rig {
+        var rig = armed(config: config)
+        rig.show(.twoFingers)
+        return rig
+    }
+}
+
+/// Only the swipe events, so a test can ignore anything else a move also causes.
+private func swipes(in events: [GestureEvent]) -> [GestureEvent] {
+    events.filter {
+        if case .swipe = $0 { return true }
+        return false
+    }
+}
+
+/// Only the scroll amounts, in order.
+private func scrolls(in events: [GestureEvent]) -> [Double] {
+    events.compactMap {
+        if case .scroll(let amount) = $0 { return amount }
+        return nil
+    }
+}
+
+// MARK: - Arming
 
 @Suite("Arming")
 struct ArmingTests {
@@ -82,45 +133,38 @@ struct ArmingTests {
         #expect(settled == [.armed])
     }
 
-    @Test("a closed fist never arms, even held still")
+    @Test("a fist never arms, even held still")
     func fistDoesNotArm() {
         var rig = Rig()
-        let fist = rig.hold(for: 1.0, open: false)
+        let fist = rig.hold(for: 1.0, pose: .fist)
         #expect(fist.isEmpty)
         let open = rig.hold(for: 0.8)
         #expect(open == [.armed])
     }
-}
 
-extension Rig {
-    /// A rig whose engine is already armed, with the hand resting mid-frame.
-    static func armed(config: GestureConfig = GestureConfig()) -> Rig {
-        var rig = Rig(config: config)
-        rig.hold(for: 0.8)
-        return rig
+    @Test("only an open palm arms: one or two fingers do not")
+    func fingersDoNotArm() {
+        var rig = Rig()
+        #expect(rig.hold(for: 1.0, pose: .oneFinger).isEmpty)
+        #expect(rig.hold(for: 1.0, pose: .twoFingers).isEmpty)
+        #expect(rig.hold(for: 0.8) == [.armed])
     }
 }
 
-/// Only the swipe events, so a test can ignore scrolling that a move also causes.
-private func swipes(in events: [GestureEvent]) -> [GestureEvent] {
-    events.filter {
-        if case .swipe = $0 { return true }
-        return false
-    }
-}
+// MARK: - Swipe
 
 @Suite("Swipe")
 struct SwipeTests {
-    @Test("a fast move to the right emits swipe right")
+    @Test("a fast move to the right with one finger emits swipe right")
     func swipeRight() {
-        var rig = Rig.armed()
+        var rig = Rig.swiping()
         let events = rig.move(toX: 0.80, toY: 0.5, over: 0.2)
         #expect(swipes(in: events) == [.swipe(.right)])
     }
 
-    @Test("a fast move to the left emits swipe left")
+    @Test("a fast move to the left with one finger emits swipe left")
     func swipeLeft() {
-        var rig = Rig.armed()
+        var rig = Rig.swiping()
         let events = rig.move(toX: 0.20, toY: 0.5, over: 0.2)
         #expect(swipes(in: events) == [.swipe(.left)])
     }
@@ -128,15 +172,39 @@ struct SwipeTests {
     @Test("a fast move while not armed does nothing, and arming still works afterward")
     func notArmedNoSwipe() {
         var rig = Rig()
+        rig.pose = .oneFinger
         let events = rig.move(toX: 0.80, toY: 0.5, over: 0.2)
         #expect(events.isEmpty)
+        rig.pose = .openPalm
         let settled = rig.hold(for: 0.8)
         #expect(settled == [.armed])
     }
 
+    @Test("an open palm moving fast does not swipe, but one finger does")
+    func openPalmDoesNotSwipe() {
+        var rig = Rig.armed()
+        let palm = rig.move(toX: 0.80, toY: 0.5, over: 0.2)
+        #expect(swipes(in: palm).isEmpty)
+        rig.hold(for: 0.5)
+        rig.show(.oneFinger)
+        let finger = rig.move(toX: 0.40, toY: 0.5, over: 0.2)
+        #expect(swipes(in: finger) == [.swipe(.left)])
+    }
+
+    @Test("two fingers moving sideways do not swipe, but one finger does")
+    func twoFingersDoNotSwipe() {
+        var rig = Rig.scrolling()
+        let sideways = rig.move(toX: 0.80, toY: 0.5, over: 0.2)
+        #expect(swipes(in: sideways).isEmpty)
+        rig.hold(for: 0.5)
+        rig.show(.oneFinger)
+        let finger = rig.move(toX: 0.40, toY: 0.5, over: 0.2)
+        #expect(swipes(in: finger) == [.swipe(.left)])
+    }
+
     @Test("a mostly vertical flick is not a swipe, but a horizontal one afterward is")
     func verticalFlickIgnored() {
-        var rig = Rig.armed()
+        var rig = Rig.swiping()
         let flick = rig.move(toX: 0.70, toY: 0.90, over: 0.2)
         #expect(swipes(in: flick).isEmpty)
         rig.hold(for: 0.5)
@@ -146,7 +214,7 @@ struct SwipeTests {
 
     @Test("a slow drift is not a swipe, but a quick move afterward is")
     func slowDriftIgnored() {
-        var rig = Rig.armed()
+        var rig = Rig.swiping()
         let drift = rig.move(toX: 0.90, toY: 0.5, over: 2.0)
         #expect(swipes(in: drift).isEmpty)
         let quick = rig.move(toX: 0.50, toY: 0.5, over: 0.2)
@@ -155,7 +223,7 @@ struct SwipeTests {
 
     @Test("the return stroke right after a swipe is ignored; a later deliberate swipe fires")
     func returnStrokeIgnored() {
-        var rig = Rig.armed()
+        var rig = Rig.swiping()
         let first = rig.move(toX: 0.80, toY: 0.5, over: 0.2)
         #expect(swipes(in: first) == [.swipe(.right)])
         let back = rig.move(toX: 0.50, toY: 0.5, over: 0.2)
@@ -164,29 +232,47 @@ struct SwipeTests {
         let second = rig.move(toX: 0.20, toY: 0.5, over: 0.2)
         #expect(swipes(in: second) == [.swipe(.left)])
     }
-}
 
-/// Only the scroll amounts, in order.
-private func scrolls(in events: [GestureEvent]) -> [Double] {
-    events.compactMap {
-        if case .scroll(let amount) = $0 { return amount }
-        return nil
+    // Field evidence: during a fast swipe the fingers curl or tilt, so the pose
+    // reads as something else for a few frames. That must not cancel the swipe.
+    @Test("a pose flicker in the middle of a swipe does not cancel it")
+    func poseFlickerKeepsSwipe() {
+        var rig = Rig.swiping()
+        var events: [GestureEvent] = []
+        events += rig.move(toX: 0.60, toY: 0.5, over: 0.067)
+        events += rig.move(toX: 0.70, toY: 0.5, over: 0.067, pose: .other)
+        events += rig.move(toX: 0.80, toY: 0.5, over: 0.067)
+        #expect(events == [.swipe(.right)])
+    }
+
+    @Test("a pose must be steady before it changes the mode")
+    func glimpseOfOneFingerIsIgnored() {
+        var rig = Rig.armed()
+        rig.hold(for: 0.1, pose: .oneFinger)
+        let moving = rig.move(toX: 0.80, toY: 0.5, over: 0.2)
+        #expect(swipes(in: moving).isEmpty)
+        rig.hold(for: 0.5)
+        rig.show(.oneFinger)
+        let steady = rig.move(toX: 0.40, toY: 0.5, over: 0.2)
+        #expect(swipes(in: steady) == [.swipe(.left)])
     }
 }
 
+// MARK: - Scroll
+
 @Suite("Scroll")
 struct ScrollTests {
-    @Test("raising the hand past the dead zone scrolls up")
+    @Test("raising two fingers past the dead zone scrolls up")
     func raisedHandScrollsUp() {
-        var rig = Rig.armed()
+        var rig = Rig.scrolling()
         let amounts = scrolls(in: rig.hold(y: 0.80, for: 0.5))
         #expect(!amounts.isEmpty)
         #expect(amounts.allSatisfy { $0 > 0 })
     }
 
-    @Test("lowering the hand past the dead zone scrolls down")
+    @Test("lowering two fingers past the dead zone scrolls down")
     func loweredHandScrollsDown() {
-        var rig = Rig.armed()
+        var rig = Rig.scrolling()
         let amounts = scrolls(in: rig.hold(y: 0.20, for: 0.5))
         #expect(!amounts.isEmpty)
         #expect(amounts.allSatisfy { $0 < 0 })
@@ -194,7 +280,7 @@ struct ScrollTests {
 
     @Test("a hand resting inside the dead zone does not scroll, but raising it does")
     func deadZone() {
-        var rig = Rig.armed()
+        var rig = Rig.scrolling()
         let resting = scrolls(in: rig.hold(y: 0.55, for: 1.0))
         #expect(resting.isEmpty)
         let raised = scrolls(in: rig.hold(y: 0.75, for: 0.5))
@@ -206,7 +292,7 @@ struct ScrollTests {
         // Amount per frame is rate * dt. With the default config the dead zone
         // is 0.06 and full speed is reached at an offset of 0.30.
         func steadyAmount(offset: Double) -> Double {
-            var rig = Rig.armed()
+            var rig = Rig.scrolling()
             rig.move(toX: 0.5, toY: 0.5 + offset, over: 0.3)
             return scrolls(in: rig.hold(for: 0.3)).last ?? 0
         }
@@ -216,73 +302,97 @@ struct ScrollTests {
         #expect(abs(steadyAmount(offset: 0.40) - 1.00 * dt) < 1e-9)
     }
 
-    @Test("scrolling pauses while a swipe cools down, then resumes")
-    func noScrollDuringSwipeCooldown() {
+    @Test("an open palm never scrolls, but two fingers lowered from there do")
+    func openPalmDoesNotScroll() {
         var rig = Rig.armed()
-        rig.move(toX: 0.5, toY: 0.8, over: 0.3)
-        rig.hold(for: 0.5)
-        let swipe = rig.move(toX: 0.8, toY: 0.8, over: 0.2)
-        #expect(swipes(in: swipe) == [.swipe(.right)])
-        let cooling = rig.hold(for: 0.4)
-        #expect(scrolls(in: cooling).isEmpty)
-        let resumed = rig.hold(for: 0.8)
-        #expect(!scrolls(in: resumed).isEmpty)
+        let palm = scrolls(in: rig.hold(y: 0.90, for: 0.5))
+        #expect(palm.isEmpty)
+        rig.show(.twoFingers)
+        let lowered = scrolls(in: rig.move(toX: 0.5, toY: 0.5, over: 0.3))
+        #expect(!lowered.isEmpty)
+        #expect(lowered.allSatisfy { $0 < 0 })
+    }
+
+    @Test("one finger never scrolls, however high it is")
+    func oneFingerDoesNotScroll() {
+        var rig = Rig.swiping()
+        let amounts = scrolls(in: rig.hold(y: 0.90, for: 0.5))
+        #expect(amounts.isEmpty)
+        rig.show(.twoFingers)
+        let lowered = scrolls(in: rig.move(toX: 0.5, toY: 0.5, over: 0.3))
+        #expect(!lowered.isEmpty)
+    }
+
+    @Test("scroll is measured from where the two-finger pose appeared, not from where the palm armed")
+    func neutralIsWhereTwoFingersAppear() {
+        var rig = Rig.armed()
+        rig.hold(y: 0.80, for: 0.3)
+        rig.show(.twoFingers)
+        let resting = scrolls(in: rig.hold(for: 0.5))
+        #expect(resting.isEmpty)
+        let raised = scrolls(in: rig.move(toX: 0.5, toY: 0.95, over: 0.3))
+        #expect(!raised.isEmpty)
+        #expect(raised.allSatisfy { $0 > 0 })
+    }
+
+    @Test("scrolling stops once the pose is no longer two fingers")
+    func scrollStopsWhenPoseChanges() {
+        var rig = Rig.scrolling()
+        let whileScrolling = scrolls(in: rig.hold(y: 0.80, for: 0.4))
+        #expect(!whileScrolling.isEmpty)
+        rig.show(.openPalm)
+        let after = scrolls(in: rig.hold(for: 0.5))
+        #expect(after.isEmpty)
     }
 }
 
+// MARK: - Disarm
+
 @Suite("Disarm")
 struct DisarmTests {
-    @Test("a fist held past the threshold disarms")
+    @Test("a fist held past the threshold stops it")
     func fistDisarms() {
         var rig = Rig.armed()
-        let events = rig.hold(for: 0.8, open: false)
+        let events = rig.hold(for: 0.8, pose: .fist)
         #expect(events == [.disarmed])
     }
 
-    @Test("a brief closed flicker does not disarm")
+    @Test("a brief fist flicker does not disarm")
     func briefFistIgnored() {
-        var rig = Rig.armed()
-        let flicker = rig.hold(for: 0.1, open: false)
+        var rig = Rig.swiping()
+        let flicker = rig.hold(for: 0.1, pose: .fist)
         #expect(flicker.isEmpty)
         let swipe = rig.move(toX: 0.80, toY: 0.5, over: 0.2)
         #expect(swipes(in: swipe) == [.swipe(.right)])
     }
 
-    // Field evidence: during a fast swipe the fingers curl or tilt, so the hand
-    // reads "closed" for a few frames. That must not cancel the swipe.
-    @Test("a closed-hand dip in the middle of a swipe does not cancel the swipe")
-    func closedDipDuringSwipeKeepsSwipe() {
-        var rig = Rig.armed()
-        var events: [GestureEvent] = []
-        events += rig.move(toX: 0.60, toY: 0.5, over: 0.067)
-        events += rig.move(toX: 0.70, toY: 0.5, over: 0.067, open: false)
-        events += rig.move(toX: 0.80, toY: 0.5, over: 0.067)
-        #expect(events == [.swipe(.right)])
-    }
-
     // Field evidence: swipe dips lasted up to ~0.25 s; a real fist is held longer.
-    @Test("a 0.3 s closed dip does not disarm, but a held fist does")
-    func closedHandNeedsToPersist() {
+    @Test("a 0.3 s fist dip does not disarm, but a held fist does")
+    func fistNeedsToPersist() {
         var rig = Rig.armed()
-        let dip = rig.hold(for: 0.3, open: false)
+        let dip = rig.hold(for: 0.3, pose: .fist)
         #expect(dip.isEmpty)
         let open = rig.hold(for: 0.2)
         #expect(open.isEmpty)
-        let fist = rig.hold(for: 0.8, open: false)
+        let fist = rig.hold(for: 0.8, pose: .fist)
         #expect(fist == [.disarmed])
     }
 
-    @Test("a hand that reads closed pauses scrolling, and scrolling resumes when it reads open")
-    func closedHandDoesNotScroll() {
+    @Test("a pose that is neither a fist nor a mode never disarms")
+    func inBetweenPoseNeverDisarms() {
         var rig = Rig.armed()
-        rig.move(toX: 0.5, toY: 0.8, over: 0.3)
-        let closed = rig.hold(for: 0.3, open: false)
-        #expect(scrolls(in: closed).isEmpty)
-        let open = rig.hold(for: 0.3)
-        #expect(!scrolls(in: open).isEmpty)
+        let events = rig.hold(for: 3.0, pose: .other)
+        #expect(events.isEmpty)
     }
 
-    @Test("losing the hand for a second disarms")
+    @Test("two fingers held for a long time is not a fist")
+    func twoFingersIsNotAFist() {
+        var rig = Rig.scrolling()
+        let events = rig.hold(for: 3.0)
+        #expect(events.isEmpty)
+    }
+
+    @Test("losing the hand for a second stops it")
     func handLostDisarms() {
         var rig = Rig.armed()
         let events = rig.noHand(for: 1.2)
@@ -291,21 +401,21 @@ struct DisarmTests {
 
     @Test("a short dropout does not disarm")
     func shortDropoutIgnored() {
-        var rig = Rig.armed()
+        var rig = Rig.swiping()
         let dropout = rig.noHand(for: 0.5)
         #expect(dropout.isEmpty)
         let swipe = rig.move(toX: 0.80, toY: 0.5, over: 0.2)
         #expect(swipes(in: swipe) == [.swipe(.right)])
     }
 
-    @Test("holding still with no gesture past the idle timeout disarms")
+    @Test("holding still with no gesture past the idle timeout stops it")
     func idleDisarms() {
         var rig = Rig.armed()
         let events = rig.hold(for: 17.0)
         #expect(events == [.disarmed])
     }
 
-    // Field evidence: the 6 s timeout fired while a palm was held up and open.
+    // Field evidence: the old 6 s timeout fired while a palm was held up and open.
     @Test("an armed hand can rest for ten seconds without being disarmed")
     func restingHandStaysArmed() {
         var rig = Rig.armed()
@@ -315,15 +425,15 @@ struct DisarmTests {
 
     @Test("gesture activity resets the idle timer")
     func activityResetsIdle() {
-        var rig = Rig.armed()
-        rig.hold(for: 4.0)
+        var rig = Rig.swiping()
+        rig.hold(for: 10.0)
         let swipe = rig.move(toX: 0.80, toY: 0.5, over: 0.2)
         #expect(swipes(in: swipe) == [.swipe(.right)])
-        let later = rig.hold(for: 4.0)
+        let later = rig.hold(for: 10.0)
         #expect(later.isEmpty)
     }
 
-    @Test("after an idle timeout the hand must be lowered before it can arm again")
+    @Test("after an idle timeout the hand must leave before it can arm again")
     func idleDisarmRequiresRelease() {
         var rig = Rig.armed()
         let idle = rig.hold(for: 17.0)
@@ -333,23 +443,26 @@ struct DisarmTests {
         #expect(rearmed == [.armed])
     }
 
-    @Test("after a fist disarm, fast moves do nothing until the palm is held still again")
+    @Test("after a fist, fast moves do nothing until the palm is held still again")
     func disarmedIgnoresSwipes() {
-        var rig = Rig.armed()
-        rig.hold(for: 0.8, open: false)
+        var rig = Rig.swiping()
+        rig.hold(for: 0.8, pose: .fist)
         let moving = rig.move(toX: 0.90, toY: 0.5, over: 0.2)
         #expect(moving.isEmpty)
+        rig.pose = .openPalm
         let again = rig.hold(for: 0.8)
         #expect(again == [.armed])
     }
 
-    @Test("re-arming sets a new neutral height")
-    func rearmResetsNeutral() {
-        var rig = Rig.armed()
-        rig.hold(for: 0.8, open: false)
+    @Test("after re-arming, a fresh two-finger pose measures from its own start height")
+    func rearmingStartsAFreshScrollNeutral() {
+        var rig = Rig.scrolling()
+        rig.hold(for: 0.8, pose: .fist)
+        rig.pose = .openPalm
         rig.move(toX: 0.5, toY: 0.8, over: 0.2)
         let rearmed = rig.hold(for: 0.8)
         #expect(rearmed == [.armed])
+        rig.show(.twoFingers)
         let resting = rig.hold(for: 0.5)
         #expect(scrolls(in: resting).isEmpty)
     }

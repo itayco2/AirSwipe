@@ -1,17 +1,33 @@
 import Foundation
 
+/// What the hand is showing, read from which fingers are extended.
+///
+/// The pose is the *mode*: it decides what a movement means. Swipes only count in
+/// one pose and scrolling only in another, so the gestures cannot be confused.
+public enum HandPose: Equatable {
+    /// All four fingers extended. Held still, it starts (arms) the engine.
+    case openPalm
+    /// All four fingers curled. Held, it stops (disarms) the engine.
+    case fist
+    /// Only the index finger extended. Swipe mode.
+    case oneFinger
+    /// Index and middle fingers extended. Scroll mode.
+    case twoFingers
+    /// Anything else, including a hand caught between poses. Does nothing.
+    case other
+}
+
 /// One observation of the tracked hand, expressed from the *user's* point of view:
 /// `x` grows toward the user's right, `y` grows upward, both normalized to 0...1.
 public struct HandSample: Equatable {
     public var x: Double
     public var y: Double
-    /// True for an open palm (fingers extended); false for a fist or curled hand.
-    public var isOpen: Bool
+    public var pose: HandPose
 
-    public init(x: Double, y: Double, isOpen: Bool = true) {
+    public init(x: Double, y: Double, pose: HandPose = .openPalm) {
         self.x = x
         self.y = y
-        self.isOpen = isOpen
+        self.pose = pose
     }
 }
 
@@ -39,9 +55,17 @@ public struct GestureConfig: Equatable {
     public var armHoldDuration: Double = 0.5
     public var armStillnessRadius: Double = 0.04
 
+    // Modes
+    /// A pose must be seen continuously this long before it changes the mode, so
+    /// a flicker between poses cannot switch what a movement means.
+    public var poseStableDuration: Double = 0.15
+    /// The pose in which horizontal movement swipes.
+    public var swipePose: HandPose = .oneFinger
+    /// The pose in which hand height scrolls.
+    public var scrollPose: HandPose = .twoFingers
+
     // Disarming
-    /// How long the hand must read closed to count as a fist. Fast swipes make
-    /// the fingers curl for up to ~0.25 s, so this must be comfortably longer.
+    /// How long a fist must be held to stop the engine.
     public var fistDisarmDuration: Double = 0.5
     public var handLostDisarmDuration: Double = 1.0
     public var idleDisarmDuration: Double = 15.0
