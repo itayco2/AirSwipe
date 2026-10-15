@@ -72,6 +72,10 @@ signing or notarization, smoothing filters.
 - Positive `CGEvent` scroll-wheel delta scrolls toward the top of the page
   (`--invert-scroll` flips it).
 - A bare binary launched from Terminal gets camera permission attributed to Terminal.
-- The finger-reach thresholds (extended ≥1.4, curled ≤1.1) come from one hand in
-  one session (open palm, two fingers and fist were seen; the one-finger pose
-  was not) and may need tuning for other hands and lighting.
+- The finger-straightness thresholds (extended ≥0.92, curled ≤0.88) come from one
+  hand with the wrist in view: extended fingers measured 0.98 to 1.00 and nothing
+  that was not extended measured above 0.86. They replaced wrist-relative reach
+  ratios, which turned to noise when the hand sat at the bottom edge of the frame
+  (49% of frames read as no pose). Straightness uses no wrist, so it should hold
+  there, but that still needs confirming on a camera with the hand held low, and
+  other hands and lighting may need tuning.
