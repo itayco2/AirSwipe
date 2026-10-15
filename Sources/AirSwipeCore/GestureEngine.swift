@@ -94,14 +94,18 @@ public final class GestureEngine {
         }
         lostSince = nil
 
-        // Closed hand: ignore it for gestures, and disarm if it stays closed.
-        guard sample.isOpen else {
-            resetTracking()
-            let since = closedSince ?? time
-            closedSince = since
-            return time - since >= config.fistDisarmDuration ? disarm() : []
+        // Whether the hand reads open flickers during fast motion, because fingers
+        // curl and tilt mid-swipe. So it must not interrupt tracking: a closed
+        // hand only pauses scrolling, and disarms once it has stayed closed for
+        // `fistDisarmDuration`.
+        if sample.isOpen {
+            closedSince = nil
+        } else {
+            closedSince = closedSince ?? time
         }
-        closedSince = nil
+        if let closedSince, time - closedSince >= config.fistDisarmDuration {
+            return disarm()
+        }
 
         // Clamp so a long gap (dropped frames) cannot produce a huge scroll jump.
         let dt = min(max(time - (previousTime ?? time), 0), config.maxSampleGap)
@@ -126,8 +130,8 @@ public final class GestureEngine {
             return [.swipe(direction)]
         }
         // Scrolling pauses while a swipe cools down so the hand's travel and
-        // return stroke cannot drag the page.
-        guard time - lastSwipeTime >= config.swipeCooldown else { return [] }
+        // return stroke cannot drag the page, and while the hand reads closed.
+        guard sample.isOpen, time - lastSwipeTime >= config.swipeCooldown else { return [] }
         return scroll(for: sample, dt: dt)
     }
 

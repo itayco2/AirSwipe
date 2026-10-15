@@ -40,9 +40,11 @@ public struct GestureConfig: Equatable {
     public var armStillnessRadius: Double = 0.04
 
     // Disarming
-    public var fistDisarmDuration: Double = 0.2
+    /// How long the hand must read closed to count as a fist. Fast swipes make
+    /// the fingers curl for up to ~0.25 s, so this must be comfortably longer.
+    public var fistDisarmDuration: Double = 0.5
     public var handLostDisarmDuration: Double = 1.0
-    public var idleDisarmDuration: Double = 6.0
+    public var idleDisarmDuration: Double = 15.0
 
     // Swipe
     public var swipeWindow: Double = 0.35

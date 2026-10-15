@@ -235,7 +235,7 @@ struct DisarmTests {
     @Test("a fist held past the threshold disarms")
     func fistDisarms() {
         var rig = Rig.armed()
-        let events = rig.hold(for: 0.5, open: false)
+        let events = rig.hold(for: 0.8, open: false)
         #expect(events == [.disarmed])
     }
 
@@ -246,6 +246,40 @@ struct DisarmTests {
         #expect(flicker.isEmpty)
         let swipe = rig.move(toX: 0.80, toY: 0.5, over: 0.2)
         #expect(swipes(in: swipe) == [.swipe(.right)])
+    }
+
+    // Field evidence: during a fast swipe the fingers curl or tilt, so the hand
+    // reads "closed" for a few frames. That must not cancel the swipe.
+    @Test("a closed-hand dip in the middle of a swipe does not cancel the swipe")
+    func closedDipDuringSwipeKeepsSwipe() {
+        var rig = Rig.armed()
+        var events: [GestureEvent] = []
+        events += rig.move(toX: 0.60, toY: 0.5, over: 0.067)
+        events += rig.move(toX: 0.70, toY: 0.5, over: 0.067, open: false)
+        events += rig.move(toX: 0.80, toY: 0.5, over: 0.067)
+        #expect(events == [.swipe(.right)])
+    }
+
+    // Field evidence: swipe dips lasted up to ~0.25 s; a real fist is held longer.
+    @Test("a 0.3 s closed dip does not disarm, but a held fist does")
+    func closedHandNeedsToPersist() {
+        var rig = Rig.armed()
+        let dip = rig.hold(for: 0.3, open: false)
+        #expect(dip.isEmpty)
+        let open = rig.hold(for: 0.2)
+        #expect(open.isEmpty)
+        let fist = rig.hold(for: 0.8, open: false)
+        #expect(fist == [.disarmed])
+    }
+
+    @Test("a hand that reads closed pauses scrolling, and scrolling resumes when it reads open")
+    func closedHandDoesNotScroll() {
+        var rig = Rig.armed()
+        rig.move(toX: 0.5, toY: 0.8, over: 0.3)
+        let closed = rig.hold(for: 0.3, open: false)
+        #expect(scrolls(in: closed).isEmpty)
+        let open = rig.hold(for: 0.3)
+        #expect(!scrolls(in: open).isEmpty)
     }
 
     @Test("losing the hand for a second disarms")
@@ -267,8 +301,16 @@ struct DisarmTests {
     @Test("holding still with no gesture past the idle timeout disarms")
     func idleDisarms() {
         var rig = Rig.armed()
-        let events = rig.hold(for: 7.0)
+        let events = rig.hold(for: 17.0)
         #expect(events == [.disarmed])
+    }
+
+    // Field evidence: the 6 s timeout fired while a palm was held up and open.
+    @Test("an armed hand can rest for ten seconds without being disarmed")
+    func restingHandStaysArmed() {
+        var rig = Rig.armed()
+        let events = rig.hold(for: 10.0)
+        #expect(events.isEmpty)
     }
 
     @Test("gesture activity resets the idle timer")
@@ -284,7 +326,7 @@ struct DisarmTests {
     @Test("after an idle timeout the hand must be lowered before it can arm again")
     func idleDisarmRequiresRelease() {
         var rig = Rig.armed()
-        let idle = rig.hold(for: 8.0)
+        let idle = rig.hold(for: 17.0)
         #expect(idle == [.disarmed])
         rig.noHand(for: 0.3)
         let rearmed = rig.hold(for: 0.8)
@@ -294,7 +336,7 @@ struct DisarmTests {
     @Test("after a fist disarm, fast moves do nothing until the palm is held still again")
     func disarmedIgnoresSwipes() {
         var rig = Rig.armed()
-        rig.hold(for: 0.5, open: false)
+        rig.hold(for: 0.8, open: false)
         let moving = rig.move(toX: 0.90, toY: 0.5, over: 0.2)
         #expect(moving.isEmpty)
         let again = rig.hold(for: 0.8)
@@ -304,7 +346,7 @@ struct DisarmTests {
     @Test("re-arming sets a new neutral height")
     func rearmResetsNeutral() {
         var rig = Rig.armed()
-        rig.hold(for: 0.5, open: false)
+        rig.hold(for: 0.8, open: false)
         rig.move(toX: 0.5, toY: 0.8, over: 0.2)
         let rearmed = rig.hold(for: 0.8)
         #expect(rearmed == [.armed])
