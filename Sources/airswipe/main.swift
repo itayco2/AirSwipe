@@ -131,6 +131,8 @@ let camera = CameraSource { pixelBuffer, time in
             sink.perform(action)
         }
     }
+
+    sink.endFrame()
 }
 
 do {

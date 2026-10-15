@@ -6,12 +6,19 @@ import Foundation
 /// Where actions go. A dry run prints them; live mode posts real events.
 protocol ActionSink {
     func perform(_ action: Action)
+    /// Called once after every camera frame, so a sink can flush anything it batched.
+    func endFrame()
+}
+
+extension ActionSink {
+    func endFrame() {}
 }
 
 /// Dry run: says what would happen and touches nothing.
 final class ConsoleSink: ActionSink {
-    private var pendingScroll: Int32 = 0
-    private var lastScrollReport = Date.distantPast
+    private var burstPixels: Int32 = 0
+    private var scrolledThisFrame = false
+    private var lastReport = Date.distantPast
 
     func perform(_ action: Action) {
         switch action {
@@ -20,16 +27,26 @@ final class ConsoleSink: ActionSink {
         case .forward:
             print("  -> would go FORWARD")
         case .scroll(let pixels):
-            // Scroll arrives every frame; summarize a few times a second so it
-            // does not drown out the swipe messages.
-            pendingScroll += pixels
-            let now = Date()
-            guard now.timeIntervalSince(lastScrollReport) >= 0.3 else { return }
-            let direction = pendingScroll >= 0 ? "UP" : "DOWN"
-            print("  -> would scroll \(direction) \(abs(pendingScroll)) px")
-            pendingScroll = 0
-            lastScrollReport = now
+            burstPixels += pixels
+            scrolledThisFrame = true
         }
+    }
+
+    /// Scroll arrives every frame. Report a burst once it ends (the first frame
+    /// without scrolling), or every half second while it continues, so short
+    /// scrolls are shown in full and long ones do not flood the terminal.
+    func endFrame() {
+        defer { scrolledThisFrame = false }
+        guard burstPixels != 0 else { return }
+
+        let now = Date()
+        let burstEnded = !scrolledThisFrame
+        guard burstEnded || now.timeIntervalSince(lastReport) >= 0.5 else { return }
+
+        let direction = burstPixels >= 0 ? "UP" : "DOWN"
+        print("  -> would scroll \(direction) \(abs(burstPixels)) px")
+        burstPixels = 0
+        lastReport = now
     }
 }
 
