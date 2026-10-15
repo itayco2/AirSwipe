@@ -52,7 +52,8 @@ with a flag below before using `--live`.
    Swipe to your left: `swipe left`, then `would go FORWARD`.
 5. Raise your hand a palm's width above where you armed it. Expect
    `would scroll UP` lines. Lower it for `DOWN`. At the start height: nothing.
-6. Close your hand into a fist for a moment. Expect `disarmed`.
+6. Hold a fist for about half a second. Expect `disarmed`.
+   (A quick closing during a swipe is deliberately ignored.)
 7. If a direction is wrong, see *If it feels wrong* below. Only when the dry run
    behaves, try `swift run airswipe --live` with a browser open on a page that has
    history.

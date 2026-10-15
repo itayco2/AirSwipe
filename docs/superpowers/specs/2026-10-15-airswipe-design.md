@@ -14,7 +14,7 @@ built-in camera: the trackpad's swipe and scroll, without touching it.
 | Open palm held still ≈0.5 s | **Arms** the app. The menu-bar icon changes. |
 | Fast horizontal swipe (armed) | Hand moves right → Back (`Cmd+[`). Hand moves left → Forward (`Cmd+]`). `--desktops` maps to `ctrl+←/→` instead. |
 | Hand above or below the arming height (armed) | Scrolls up or down. Speed grows with distance, with a dead zone around neutral. |
-| Fist ≥0.2 s, hand out of frame ≥1 s, or ~6 s with no gesture | **Disarms.** Re-arm by holding an open palm again (this also resets the neutral height). |
+| Fist held ≥0.5 s, hand out of frame ≥1 s, or ~15 s with no gesture | **Disarms.** Re-arm by holding an open palm again (this also resets the neutral height). |
 
 Nothing fires unless armed. That single rule is what stops waving at someone
 from changing the page.
