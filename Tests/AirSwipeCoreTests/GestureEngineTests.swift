@@ -310,11 +310,38 @@ struct SwipeTests {
         var rig = Rig.swiping()
         rig.move(toX: 0.80, toY: 0.5, over: 0.2)
         for _ in 0..<4 {
-            rig.move(toX: 0.74, toY: 0.5, over: 0.4)
-            rig.move(toX: 0.86, toY: 0.5, over: 0.4)
+            rig.move(toX: 0.76, toY: 0.5, over: 0.4)
+            rig.move(toX: 0.84, toY: 0.5, over: 0.4)
         }
         let swipe = rig.move(toX: 0.56, toY: 0.5, over: 0.2)
         #expect(swipes(in: swipe) == [.swipe(.left)])
+    }
+
+    // Field evidence: natural swipes were about 0.14-0.16 of the frame wide, just
+    // under the old 0.18 threshold, so only the big ones were tracked.
+    @Test("a small, natural swipe is tracked")
+    func smallSwipeIsTracked() {
+        var rig = Rig.swiping()
+        let right = rig.move(toX: 0.64, toY: 0.5, over: 0.25)
+        #expect(swipes(in: right) == [.swipe(.right)])
+    }
+
+    // Measuring a swipe from the oldest sample in the window loses the distance the
+    // hand covered on its way back to the middle; it has to be measured from the
+    // turnaround point, or a small swipe straight after a return is missed.
+    @Test("small swipes and small returns work as a sequence, with no pause")
+    func smallSwipesInSequence() {
+        var rig = Rig.swiping()
+        var events: [GestureEvent] = []
+        events += rig.move(toX: 0.64, toY: 0.5, over: 0.25)
+        events += rig.hold(for: 0.5)
+        events += rig.move(toX: 0.50, toY: 0.5, over: 0.25)
+        events += rig.move(toX: 0.64, toY: 0.5, over: 0.25)
+        events += rig.hold(for: 0.5)
+        events += rig.move(toX: 0.50, toY: 0.5, over: 0.25)
+        events += rig.hold(for: 0.5)
+        events += rig.move(toX: 0.36, toY: 0.5, over: 0.25)
+        #expect(swipes(in: events) == [.swipe(.right), .swipe(.right), .swipe(.left)])
     }
 
     // Field evidence: during a fast swipe the fingers curl or tilt, so the pose
@@ -376,7 +403,9 @@ struct ScrollTests {
         // Amount per frame is rate * dt. With the default config the dead zone
         // is 0.06 and full speed is reached at an offset of 0.30.
         func steadyAmount(offset: Double) -> Double {
-            var rig = Rig.scrolling()
+            var config = GestureConfig()
+            config.scrollMode = .rate
+            var rig = Rig.scrolling(config: config)
             rig.move(toX: 0.5, toY: 0.5 + offset, over: 0.3)
             return scrolls(in: rig.hold(for: 0.3)).last ?? 0
         }
@@ -427,6 +456,55 @@ struct ScrollTests {
         rig.show(.openPalm)
         let after = scrolls(in: rig.hold(for: 0.5))
         #expect(after.isEmpty)
+    }
+
+    // Field evidence: with "hand height sets speed", lowering a raised hand kept
+    // scrolling UP until it crossed the start height, which read as "up and down
+    // does not work". The page should follow the hand's movement instead.
+    @Test("the page follows the hand: moving up scrolls up, moving down scrolls down")
+    func pageFollowsTheHand() {
+        var rig = Rig.scrolling()
+        let up = scrolls(in: rig.move(toX: 0.5, toY: 0.75, over: 0.4))
+        #expect(!up.isEmpty)
+        #expect(up.allSatisfy { $0 > 0 })
+        rig.hold(for: 0.5)
+        // Still higher than where it started, but moving down: this must scroll down.
+        let down = scrolls(in: rig.move(toX: 0.5, toY: 0.60, over: 0.4))
+        #expect(!down.isEmpty)
+        #expect(down.allSatisfy { $0 < 0 })
+    }
+
+    @Test("a hand held still stops scrolling, even when it is held high")
+    func heldHighHandStopsScrolling() {
+        var rig = Rig.scrolling()
+        rig.move(toX: 0.5, toY: 0.80, over: 0.4)
+        rig.hold(for: 0.5)
+        let held = scrolls(in: rig.hold(for: 1.0))
+        #expect(held.isEmpty)
+    }
+
+    @Test("scroll distance is proportional to how far the hand moves")
+    func scrollIsProportionalToMovement() {
+        func total(forRise rise: Double) -> Double {
+            var rig = Rig.scrolling()
+            var amounts = scrolls(in: rig.move(toX: 0.5, toY: 0.5 + rise, over: 0.4))
+            amounts += scrolls(in: rig.hold(for: 1.0))
+            return amounts.reduce(0, +)
+        }
+        let small = total(forRise: 0.1)
+        let large = total(forRise: 0.2)
+        #expect(small > 0)
+        #expect(abs(large / small - 2.0) < 0.15)
+    }
+
+    @Test("the original hand-height model is still available, and keeps scrolling while held")
+    func rateModeKeepsScrollingWhileHeld() {
+        var config = GestureConfig()
+        config.scrollMode = .rate
+        var rig = Rig.scrolling(config: config)
+        rig.move(toX: 0.5, toY: 0.80, over: 0.4)
+        let held = scrolls(in: rig.hold(for: 1.0))
+        #expect(!held.isEmpty)
     }
 }
 

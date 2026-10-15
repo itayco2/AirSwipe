@@ -59,6 +59,17 @@ public enum DisarmReason: Equatable {
     case idle
 }
 
+/// How hand movement becomes scrolling.
+public enum ScrollMode: Equatable {
+    /// The page follows the hand: moving it up scrolls up, moving it down scrolls
+    /// down, and holding it still stops. Like two fingers on a trackpad.
+    case followHand
+    /// Hand height sets speed: the farther the hand is above or below where the
+    /// two-finger pose appeared, the faster the page scrolls, for as long as it
+    /// stays there.
+    case rate
+}
+
 /// Every tunable threshold in one place. Times are seconds; distances are
 /// fractions of the camera frame (0...1).
 public struct GestureConfig: Equatable {
@@ -82,10 +93,21 @@ public struct GestureConfig: Equatable {
     public var idleDisarmDuration: Double = 15.0
 
     // Swipe
-    public var swipeWindow: Double = 0.35
-    public var swipeMinDistance: Double = 0.18
+    /// How far back, in seconds, a swipe's travel is measured.
+    public var swipeWindow: Double = 0.40
+    /// How far the hand must travel, as a fraction of the frame, to count as a swipe.
+    /// Natural swipes measured about 0.14 to 0.16 wide, so this sits below that.
+    public var swipeMinDistance: Double = 0.12
     public var swipeMaxVerticalRatio: Double = 0.6
     public var swipeCooldown: Double = 0.7
+
+    /// A swipe starts from a hand that has slowed or stopped at the middle, while a
+    /// return that overshoots is still moving. The hand counts as slow when it has
+    /// moved at most `swipeSlowSpeed` (frame widths per second) over the last
+    /// `swipeSlowWindow` seconds. Lifting the return guard also keeps only that last
+    /// stretch of motion, so the turnaround point is not lost.
+    public var swipeSlowWindow: Double = 0.10
+    public var swipeSlowSpeed: Double = 0.30
 
     // Return guard: after a swipe the hand comes back toward where it started, and
     // that return must not swipe the other way. Swipes are held off until the hand
@@ -95,8 +117,9 @@ public struct GestureConfig: Equatable {
     /// `swipeMinDistance`, or the end of a swipe would already count as "home".
     public var swipeHomeRadius: Double = 0.08
     /// Settling this close to the origin (still for `swipeSettleDwell`) lifts the
-    /// guard too, for returns that stop a little short of the exact middle.
-    public var swipeSettleRadius: Double = 0.15
+    /// guard too, for returns that stop a little short of the exact middle. Like
+    /// `swipeHomeRadius`, it must stay below `swipeMinDistance`.
+    public var swipeSettleRadius: Double = 0.10
     /// How long the hand must stay still within `swipeSettleRadius`.
     public var swipeSettleDwell: Double = 0.10
     /// How long the hand must stay still anywhere else to lift the guard.
@@ -107,7 +130,21 @@ public struct GestureConfig: Equatable {
     public var swipeDwellRadius: Double = 0.04
 
     // Scroll
+    public var scrollMode: ScrollMode = .followHand
+
+    /// `.followHand`: how much to scroll per unit of vertical hand movement, in
+    /// full-speed-seconds per frame height. 2.5 means moving the hand a tenth of
+    /// the frame scrolls a quarter of a second at full speed.
+    public var scrollFollowGain: Double = 2.5
+    /// `.followHand`: how much of each new height reading is taken (0...1). Lower
+    /// is steadier but lags more; it keeps hand tremor from scrolling the page.
+    public var scrollSmoothing: Double = 0.4
+    /// `.followHand`: smoothed movement per frame below this is ignored.
+    public var scrollFollowDeadband: Double = 0.003
+
+    /// `.rate`: no scrolling within this distance of the neutral height.
     public var scrollDeadZone: Double = 0.06
+    /// `.rate`: the distance from neutral at which scrolling reaches full speed.
     public var scrollFullSpeedOffset: Double = 0.30
 
     /// Gaps between samples longer than this are clamped when integrating scroll.

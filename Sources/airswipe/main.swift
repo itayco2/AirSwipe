@@ -8,6 +8,7 @@ struct Options {
     var live = false
     var desktops = false
     var invertScroll = false
+    var rateScroll = false
     var mirror = true
     var debug = false
 }
@@ -16,13 +17,14 @@ let usage = """
 airswipe: change pages and scroll by moving your hand in the air.
 
 USAGE
-  airswipe [--live] [--desktops] [--invert-scroll] [--no-mirror] [--debug]
+  airswipe [--live] [--desktops] [--invert-scroll] [--rate-scroll] [--no-mirror] [--debug]
 
 OPTIONS
   (default)        Dry run. Prints what it would do and posts nothing.
   --live           Post real key and scroll events (needs Accessibility permission).
   --desktops       Swipes switch desktops (Ctrl+Left/Right) instead of back/forward.
   --invert-scroll  Flip the scroll direction.
+  --rate-scroll    Scroll by hand height (speed) instead of following the hand.
   --no-mirror      Do not mirror the camera horizontally.
   --debug          Print what the camera layer sees about ten times a second.
   -h, --help       Show this help.
@@ -30,7 +32,7 @@ OPTIONS
 GESTURES (the number of fingers is the command)
   Open palm, held still for half a second   START (menu-bar icon shows ON)
   One finger, move right / left             swipe: back / forward
-  Two fingers, raise / lower your hand      scroll up / down
+  Two fingers, move your hand up / down     scroll: the page follows your hand
   Fist, held for half a second              STOP
 """
 
@@ -41,6 +43,7 @@ func parseOptions(_ arguments: [String]) -> Options {
         case "--live": options.live = true
         case "--desktops": options.desktops = true
         case "--invert-scroll": options.invertScroll = true
+        case "--rate-scroll": options.rateScroll = true
         case "--no-mirror": options.mirror = false
         case "--debug": options.debug = true
         case "-h", "--help":
@@ -58,7 +61,12 @@ func parseOptions(_ arguments: [String]) -> Options {
 
 let options = parseOptions(Array(CommandLine.arguments.dropFirst()))
 
-let engine = GestureEngine()
+var gestureConfig = GestureConfig()
+if options.rateScroll {
+    gestureConfig.scrollMode = .rate
+}
+
+let engine = GestureEngine(config: gestureConfig)
 let mapper = ActionMapper()
 let tracker = HandTracker(mirrorX: options.mirror, collectDiagnostics: options.debug)
 
