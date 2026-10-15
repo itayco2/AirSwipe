@@ -129,8 +129,38 @@ final class HandTracker {
             : "x=-- y=-- tipY=\(tipY)"
         let wristText = wrist.map { format(Double($0.confidence)) } ?? "--"
 
+        // Wrist-free measures, for calibrating a pose classifier that keeps working
+        // when the wrist is below the bottom edge of the frame:
+        //   str   how straight each finger is (tip distance over chain length),
+        //         near 1 when extended and much lower when curled
+        //   reach each fingertip's distance from its own knuckle, in palm widths
+        let pipJoints: [Joint] = [.indexPIP, .middlePIP, .ringPIP, .littlePIP]
+        let dipJoints: [Joint] = [.indexDIP, .middleDIP, .ringDIP, .littleDIP]
+        func distance(_ a: VNRecognizedPoint, _ b: VNRecognizedPoint) -> Double {
+            hypot(Double(a.location.x - b.location.x), Double(a.location.y - b.location.y))
+        }
+        var palmWidth = 0.0
+        if let index = raw(.indexMCP), let little = raw(.littleMCP) {
+            palmWidth = distance(index, little)
+        }
+        var straight: [String] = []
+        var reach: [String] = []
+        for i in 0..<4 {
+            guard let mcp = raw(knuckleJoints[i]), let pip = raw(pipJoints[i]),
+                  let dip = raw(dipJoints[i]), let tip = raw(fingertipJoints[i]) else {
+                straight.append("--")
+                reach.append("--")
+                continue
+            }
+            let chain = distance(mcp, pip) + distance(pip, dip) + distance(dip, tip)
+            straight.append(chain > 0 ? format(distance(mcp, tip) / chain) : "--")
+            reach.append(palmWidth > 0 ? format(distance(mcp, tip) / palmWidth) : "--")
+        }
+
         return "wrist=\(wristText) pose=\(poseText) "
             + "ratio=\(ratios.joined(separator: "/")) "
+            + "str=\(straight.joined(separator: "/")) "
+            + "reach=\(reach.joined(separator: "/")) palmW=\(format(palmWidth)) "
             + "tipConf=\(confidences.joined(separator: "/")) \(position)"
     }
 }
