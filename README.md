@@ -66,6 +66,7 @@ with a flag below before using `--live`.
 | `--desktops` | Swipes switch desktops (`Ctrl+←/→`) instead of back/forward |
 | `--invert-scroll` | Flip the scroll direction |
 | `--no-mirror` | Do not mirror the camera horizontally |
+| `--debug` | Print what the camera layer sees about ten times a second (hand found, per-finger reach ratios and confidences, palm position, armed state) |
 
 ## If it feels wrong
 

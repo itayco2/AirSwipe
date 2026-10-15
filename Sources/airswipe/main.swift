@@ -9,13 +9,14 @@ struct Options {
     var desktops = false
     var invertScroll = false
     var mirror = true
+    var debug = false
 }
 
 let usage = """
 airswipe: change pages and scroll by moving your hand in the air.
 
 USAGE
-  airswipe [--live] [--desktops] [--invert-scroll] [--no-mirror]
+  airswipe [--live] [--desktops] [--invert-scroll] [--no-mirror] [--debug]
 
 OPTIONS
   (default)        Dry run. Prints what it would do and posts nothing.
@@ -23,6 +24,7 @@ OPTIONS
   --desktops       Swipes switch desktops (Ctrl+Left/Right) instead of back/forward.
   --invert-scroll  Flip the scroll direction.
   --no-mirror      Do not mirror the camera horizontally.
+  --debug          Print what the camera layer sees about ten times a second.
   -h, --help       Show this help.
 
 GESTURES
@@ -40,6 +42,7 @@ func parseOptions(_ arguments: [String]) -> Options {
         case "--desktops": options.desktops = true
         case "--invert-scroll": options.invertScroll = true
         case "--no-mirror": options.mirror = false
+        case "--debug": options.debug = true
         case "-h", "--help":
             print(usage)
             exit(0)
@@ -57,7 +60,7 @@ let options = parseOptions(Array(CommandLine.arguments.dropFirst()))
 
 let engine = GestureEngine()
 let mapper = ActionMapper()
-let tracker = HandTracker(mirrorX: options.mirror)
+let tracker = HandTracker(mirrorX: options.mirror, collectDiagnostics: options.debug)
 
 let sink: ActionSink
 if options.live {
@@ -78,19 +81,49 @@ if options.live {
 NSApplication.shared.setActivationPolicy(.accessory)
 let status = StatusItemController(mode: options.live ? "live" : "dry run")
 
+// Diagnostics state (used only with --debug). Touched only on the camera queue.
+var debugOrigin: Double?
+var debugFrames = 0
+var debugLastPrint = 0.0
+var armedNow = false
+
+/// "[ 12.3s] " in debug mode, so events can be lined up with the frame lines.
+func stamp(_ time: Double) -> String {
+    guard options.debug, let origin = debugOrigin else { return "" }
+    return String(format: "[%5.1fs] ", time - origin)
+}
+
 // Runs on the camera queue, once per frame: camera -> Vision -> engine -> action.
 let camera = CameraSource { pixelBuffer, time in
+    if debugOrigin == nil {
+        debugOrigin = time
+        debugLastPrint = time
+    }
     let sample = tracker.sample(from: pixelBuffer)
+
+    if options.debug {
+        debugFrames += 1
+        if time - debugLastPrint >= 0.1 {
+            let fps = Double(debugFrames) / (time - debugLastPrint)
+            let state = armedNow ? "ARMED" : "idle "
+            print("\(stamp(time))\(state) \(Int(fps.rounded()))fps \(tracker.diagnostics)")
+            debugFrames = 0
+            debugLastPrint = time
+        }
+    }
+
     for event in engine.process(sample, at: time) {
         switch event {
         case .armed:
-            print("armed: hand gestures are on")
+            armedNow = true
+            print("\(stamp(time))armed: hand gestures are on")
             DispatchQueue.main.async { status.setArmed(true) }
         case .disarmed:
-            print("disarmed")
+            armedNow = false
+            print("\(stamp(time))disarmed")
             DispatchQueue.main.async { status.setArmed(false) }
         case .swipe(let direction):
-            print("swipe \(direction == .right ? "right" : "left")")
+            print("\(stamp(time))swipe \(direction == .right ? "right" : "left")")
         case .scroll:
             break
         }
