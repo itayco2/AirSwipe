@@ -27,11 +27,11 @@ OPTIONS
   --debug          Print what the camera layer sees about ten times a second.
   -h, --help       Show this help.
 
-GESTURES
-  Hold an open palm still for half a second   arms it (menu-bar icon shows ON)
-  Swipe your hand right / left                back / forward
-  Raise / lower your hand from where you armed  scroll up / down
-  Make a fist, or lower your hand out of view   disarms it
+GESTURES (the number of fingers is the command)
+  Open palm, held still for half a second   START (menu-bar icon shows ON)
+  One finger, move right / left             swipe: back / forward
+  Two fingers, raise / lower your hand      scroll up / down
+  Fist, held for half a second              STOP
 """
 
 func parseOptions(_ arguments: [String]) -> Options {

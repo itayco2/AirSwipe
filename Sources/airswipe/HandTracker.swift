@@ -5,7 +5,7 @@ import Vision
 
 /// Finds one hand in a camera frame and reduces it to a `HandSample`.
 ///
-/// Everything beyond joint extraction (is it open? did it swipe?) lives in
+/// Everything beyond joint extraction (which pose is it? did it swipe?) lives in
 /// `AirSwipeCore`, where it can be tested without a camera.
 final class HandTracker {
     private typealias Joint = VNHumanHandPoseObservation.JointName
@@ -25,7 +25,8 @@ final class HandTracker {
 
     /// One line describing the latest frame: whether a hand was found, how
     /// confident each fingertip was, how far each finger reaches past its
-    /// knuckle, and where the palm is. Only filled in when diagnostics are on.
+    /// knuckle, which pose that makes, and where the palm is. Only filled in when
+    /// diagnostics are on.
     private(set) var diagnostics = ""
 
     /// - Parameters:
@@ -59,7 +60,7 @@ final class HandTracker {
 
         guard let wrist = point(.wrist) else {
             if collectDiagnostics {
-                diagnostics = "hand=WEAK " + describe(observation, isOpen: nil, x: nil, y: nil)
+                diagnostics = "hand=WEAK " + describe(observation, pose: nil, x: nil, y: nil)
             }
             return nil
         }
@@ -73,23 +74,23 @@ final class HandTracker {
         let y = palm.map(\.y).reduce(0, +) / count
         if mirrorX { x = 1 - x }
 
-        // Fingers hidden by curling often come back below the confidence floor;
-        // when any joint is missing, the hand is simply "not open".
+        // With any joint missing the classifier cannot judge the hand and reports
+        // `.other`, which the engine treats as "do nothing".
         let tips = fingertipJoints.compactMap(point)
-        let isOpen = OpenPalmClassifier.isOpen(wrist: wrist, knuckles: knuckles, fingertips: tips)
+        let pose = HandPoseClassifier.classify(wrist: wrist, knuckles: knuckles, fingertips: tips)
 
         if collectDiagnostics {
-            diagnostics = "hand=yes " + describe(observation, isOpen: isOpen, x: x, y: y)
+            diagnostics = "hand=yes " + describe(observation, pose: pose, x: x, y: y)
         }
-        return HandSample(x: Double(x), y: Double(y), isOpen: isOpen)
+        return HandSample(x: Double(x), y: Double(y), pose: pose)
     }
 
     // MARK: - Diagnostics
 
     /// Raw joint data straight from Vision, ignoring the confidence floor, so we
-    /// can see *why* the hand was or was not classified as open.
+    /// can see *why* the hand was classified as it was.
     private func describe(_ observation: VNHumanHandPoseObservation,
-                          isOpen: Bool?, x: CGFloat?, y: CGFloat?) -> String {
+                          pose: HandPose?, x: CGFloat?, y: CGFloat?) -> String {
         func raw(_ joint: Joint) -> VNRecognizedPoint? {
             try? observation.recognizedPoint(joint)
         }
@@ -114,13 +115,13 @@ final class HandTracker {
             }
         }
 
-        let openText = isOpen.map { $0 ? "Y" : "N" } ?? "?"
+        let poseText = pose.map { String(describing: $0) } ?? "?"
         let position = (x != nil && y != nil)
             ? "x=\(format(Double(x ?? 0))) y=\(format(Double(y ?? 0)))"
             : "x=-- y=--"
         let wristText = wrist.map { format(Double($0.confidence)) } ?? "--"
 
-        return "wrist=\(wristText) open=\(openText) "
+        return "wrist=\(wristText) pose=\(poseText) "
             + "ratio=\(ratios.joined(separator: "/")) "
             + "tipConf=\(confidences.joined(separator: "/")) \(position)"
     }

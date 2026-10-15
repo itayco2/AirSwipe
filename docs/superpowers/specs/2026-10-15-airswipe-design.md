@@ -11,10 +11,17 @@ built-in camera: the trackpad's swipe and scroll, without touching it.
 
 | Gesture | Effect |
 |---|---|
-| Open palm held still ≈0.5 s | **Arms** the app. The menu-bar icon changes. |
-| Fast horizontal swipe (armed) | Hand moves right → Back (`Cmd+[`). Hand moves left → Forward (`Cmd+]`). `--desktops` maps to `ctrl+←/→` instead. |
-| Hand above or below the arming height (armed) | Scrolls up or down. Speed grows with distance, with a dead zone around neutral. |
-| Fist held ≥0.5 s, hand out of frame ≥1 s, or ~15 s with no gesture | **Disarms.** Re-arm by holding an open palm again (this also resets the neutral height). |
+| Open palm held still ≈0.5 s | **Start.** Arms the app. The menu-bar icon changes. |
+| One finger (index), fast horizontal move | Hand moves right → Back (`Cmd+[`). Hand moves left → Forward (`Cmd+]`). `--desktops` maps to `ctrl+←/→` instead. |
+| Two fingers (index and middle), hand above or below where the pose appeared | Scrolls up or down. Speed grows with distance, with a dead zone around neutral. |
+| Fist held ≥0.5 s, hand out of frame ≥1 s, or ~15 s with no gesture | **Stop.** Disarms. Re-arm by holding an open palm again. |
+
+The number of fingers is the command. A pose only becomes the mode once it has
+been steady for 0.15 s, an in-between pose does nothing and never disarms, and
+position is tracked in every pose so a swipe survives a flicker. This replaced an
+earlier open-hand model after a real-camera log showed that fast swipes make the
+open/closed reading dip below threshold for ~0.2 s, and that a natural two-finger
+scroll was being read as a fist.
 
 Nothing fires unless armed. That single rule is what stops waving at someone
 from changing the page.
@@ -58,4 +65,6 @@ signing or notarization, smoothing filters.
 - Positive `CGEvent` scroll-wheel delta scrolls toward the top of the page
   (`--invert-scroll` flips it).
 - A bare binary launched from Terminal gets camera permission attributed to Terminal.
-- The open-palm geometry thresholds work for real hands and lighting.
+- The finger-reach thresholds (extended ≥1.4, curled ≤1.1) come from one hand in
+  one session (open palm, two fingers and fist were seen; the one-finger pose
+  was not) and may need tuning for other hands and lighting.
