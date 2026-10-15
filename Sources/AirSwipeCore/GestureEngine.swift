@@ -59,8 +59,18 @@ public final class GestureEngine {
     private var fistSince: TimeInterval?
     private var lostSince: TimeInterval?
 
+    /// Why the engine most recently disarmed, so the app can explain it.
+    public private(set) var lastDisarmReason: DisarmReason?
+
     public init(config: GestureConfig = GestureConfig()) {
         self.config = config
+    }
+
+    /// One line describing the engine's internal state, for debugging.
+    public var diagnostics: String {
+        let guardText = awaitingReturn ? String(format: "ON(home=%.2f)", returnHomeX) : "off"
+        let neutral = String(format: "%.2f", scrollNeutralY)
+        return "mode=\(mode) guard=\(guardText) neutralY=\(neutral)"
     }
 
     /// Feed one frame. `sample` is nil when no hand is visible.
@@ -120,7 +130,7 @@ public final class GestureEngine {
             candidateSince = time
             let since = lostSince ?? time
             lostSince = since
-            return time - since >= config.handLostDisarmDuration ? disarm() : []
+            return time - since >= config.handLostDisarmDuration ? disarm(.handLost) : []
         }
         lostSince = nil
 
@@ -133,7 +143,7 @@ public final class GestureEngine {
             fistSince = nil
         }
         if let fistSince, time - fistSince >= config.fistDisarmDuration {
-            return disarm()
+            return disarm(.fist)
         }
 
         updateMode(for: sample, at: time)
@@ -151,7 +161,7 @@ public final class GestureEngine {
 
         if time - lastActivity >= config.idleDisarmDuration {
             needsRelease = true
-            return disarm()
+            return disarm(.idle)
         }
         return []
     }
@@ -173,10 +183,12 @@ public final class GestureEngine {
         }
     }
 
-    /// While a swipe's return is pending, watch for the hand to come to rest. The
-    /// guard lifts when the hand has settled back near where the swipe started
-    /// (the middle), when it has rested anywhere for a while, or on its own after
-    /// `swipeReturnGuard`, so it can never leave swiping stuck off.
+    /// While a swipe's return is pending, watch for the hand to come back. The
+    /// guard lifts the moment the hand is back at the swipe's origin (the middle),
+    /// so a swipe that follows without a pause is tracked. It also lifts when the
+    /// hand settles a little short of the middle, when it has rested anywhere for
+    /// a while, or on its own after `swipeReturnGuard`, so it can never leave
+    /// swiping stuck off.
     private func updateReturnGuard(for sample: HandSample, at time: TimeInterval) {
         guard awaitingReturn else { return }
 
@@ -186,12 +198,13 @@ public final class GestureEngine {
         }
         let dwell = time - dwellSince
 
-        let settledAtHome = abs(dwellX - returnHomeX) <= config.swipeHomeRadius
-            && dwell >= config.swipeHomeDwell
+        let arrivedHome = abs(sample.x - returnHomeX) <= config.swipeHomeRadius
+        let settledNearHome = abs(dwellX - returnHomeX) <= config.swipeSettleRadius
+            && dwell >= config.swipeSettleDwell
         let restedAway = dwell >= config.swipeRestDuration
         let expired = time - guardSince >= config.swipeReturnGuard
 
-        if settledAtHome || restedAway || expired {
+        if arrivedHome || settledNearHome || restedAway || expired {
             awaitingReturn = false
             // The window still holds the return stroke. Left in place it would
             // fire as a swipe the instant the guard lifts, so forget it.
@@ -263,13 +276,14 @@ public final class GestureEngine {
         previousTime = nil
     }
 
-    private func disarm() -> [GestureEvent] {
+    private func disarm(_ reason: DisarmReason) -> [GestureEvent] {
         state = .idle
         holdAnchor = nil
         fistSince = nil
         lostSince = nil
         awaitingReturn = false
         mode = .other
+        lastDisarmReason = reason
         resetTracking()
         return [.disarmed]
     }

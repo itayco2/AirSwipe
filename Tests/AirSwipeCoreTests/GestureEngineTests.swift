@@ -256,13 +256,26 @@ struct SwipeTests {
         #expect(swipes(in: settled).isEmpty)
     }
 
-    @Test("a return that overshoots the middle is not a swipe either")
+    @Test("a return that slightly overshoots the middle is not a swipe either")
     func overshootingReturnIsNotASwipe() {
         var rig = Rig.swiping()
         rig.move(toX: 0.80, toY: 0.5, over: 0.2)
         rig.hold(for: 1.0)
-        let back = rig.move(toX: 0.30, toY: 0.5, over: 0.3)
+        let back = rig.move(toX: 0.44, toY: 0.5, over: 0.25)
         #expect(swipes(in: back).isEmpty)
+    }
+
+    // User report: after returning to the middle the next swipe was not tracked,
+    // because the guard waited for a pause the hand never made.
+    @Test("a swipe that follows the return without any pause is tracked")
+    func swipeStraightAfterReturnIsTracked() {
+        var rig = Rig.swiping()
+        var events: [GestureEvent] = []
+        events += rig.move(toX: 0.80, toY: 0.5, over: 0.2)
+        events += rig.hold(for: 0.5)
+        events += rig.move(toX: 0.50, toY: 0.5, over: 0.25)
+        events += rig.move(toX: 0.80, toY: 0.5, over: 0.2)
+        #expect(swipes(in: events) == [.swipe(.right), .swipe(.right)])
     }
 
     @Test("once the hand has settled in the middle, swipes work in both directions again")
@@ -536,5 +549,26 @@ struct DisarmTests {
         rig.show(.twoFingers)
         let resting = rig.hold(for: 0.5)
         #expect(scrolls(in: resting).isEmpty)
+    }
+
+    @Test("it reports why it stopped: a held fist")
+    func disarmReasonIsFist() {
+        var rig = Rig.armed()
+        rig.hold(for: 0.8, pose: .fist)
+        #expect(rig.engine.lastDisarmReason == .fist)
+    }
+
+    @Test("it reports why it stopped: the hand left the view")
+    func disarmReasonIsHandLost() {
+        var rig = Rig.armed()
+        rig.noHand(for: 1.2)
+        #expect(rig.engine.lastDisarmReason == .handLost)
+    }
+
+    @Test("it reports why it stopped: nothing happened for too long")
+    func disarmReasonIsIdle() {
+        var rig = Rig.armed()
+        rig.hold(for: 17.0)
+        #expect(rig.engine.lastDisarmReason == .idle)
     }
 }

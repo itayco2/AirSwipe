@@ -48,6 +48,17 @@ public enum GestureEvent: Equatable {
     case scroll(amount: Double)
 }
 
+/// Why the engine stopped listening. Lets the app say what happened instead of
+/// just "disarmed".
+public enum DisarmReason: Equatable {
+    /// A fist was held (the deliberate stop signal).
+    case fist
+    /// The hand was out of view for too long.
+    case handLost
+    /// Nothing happened for too long.
+    case idle
+}
+
 /// Every tunable threshold in one place. Times are seconds; distances are
 /// fractions of the camera frame (0...1).
 public struct GestureConfig: Equatable {
@@ -79,11 +90,15 @@ public struct GestureConfig: Equatable {
     // Return guard: after a swipe the hand comes back toward where it started, and
     // that return must not swipe the other way. Swipes are held off until the hand
     // settles near the swipe's origin, rests elsewhere, or the guard expires.
-    /// How close to the swipe's origin the hand must settle. Must stay below
+    /// Arriving this close to the swipe's origin lifts the guard at once, so a swipe
+    /// that follows the return straight away is tracked. Must stay below
     /// `swipeMinDistance`, or the end of a swipe would already count as "home".
-    public var swipeHomeRadius: Double = 0.15
-    /// How long the hand must stay still near the origin to count as returned.
-    public var swipeHomeDwell: Double = 0.15
+    public var swipeHomeRadius: Double = 0.08
+    /// Settling this close to the origin (still for `swipeSettleDwell`) lifts the
+    /// guard too, for returns that stop a little short of the exact middle.
+    public var swipeSettleRadius: Double = 0.15
+    /// How long the hand must stay still within `swipeSettleRadius`.
+    public var swipeSettleDwell: Double = 0.10
     /// How long the hand must stay still anywhere else to lift the guard.
     public var swipeRestDuration: Double = 1.5
     /// The guard lifts by itself this long after the swipe.

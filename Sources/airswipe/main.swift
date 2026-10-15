@@ -106,7 +106,8 @@ let camera = CameraSource { pixelBuffer, time in
         if time - debugLastPrint >= 0.1 {
             let fps = Double(debugFrames) / (time - debugLastPrint)
             let state = armedNow ? "ARMED" : "idle "
-            print("\(stamp(time))\(state) \(Int(fps.rounded()))fps \(tracker.diagnostics)")
+            let line = "\(Int(fps.rounded()))fps \(engine.diagnostics) | \(tracker.diagnostics)"
+            print("\(stamp(time))\(state) \(line)")
             debugFrames = 0
             debugLastPrint = time
         }
@@ -120,7 +121,14 @@ let camera = CameraSource { pixelBuffer, time in
             DispatchQueue.main.async { status.setArmed(true) }
         case .disarmed:
             armedNow = false
-            print("\(stamp(time))disarmed")
+            let why: String
+            switch engine.lastDisarmReason {
+            case .fist?: why = "fist held"
+            case .handLost?: why = "hand out of view"
+            case .idle?: why = "idle too long"
+            case nil: why = "unknown"
+            }
+            print("\(stamp(time))disarmed (\(why))")
             DispatchQueue.main.async { status.setArmed(false) }
         case .swipe(let direction):
             print("\(stamp(time))swipe \(direction == .right ? "right" : "left")")
