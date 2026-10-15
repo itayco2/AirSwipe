@@ -1,6 +1,6 @@
 import Foundation
 
-/// Reads a `HandPose` from joint positions.
+/// Reads a `HandPose` from the finger joints.
 ///
 /// Kept free of Vision types so the geometry can be tested with plain points.
 public enum HandPoseClassifier {
@@ -10,34 +10,47 @@ public enum HandPoseClassifier {
         case undecided
     }
 
-    /// Each finger is judged by how far its tip sits from the wrist compared with
-    /// its own knuckle: well past it is extended, back at it is curled, and in
-    /// between is undecided. Requiring a clear gap between "extended" and
-    /// "curled" is what keeps a half-relaxed hand from flickering between poses.
-    /// The thumb is ignored: it varies too much between people and poses.
+    /// How straight a finger is: the distance from its first to its last joint,
+    /// divided by the length of the chain. 1 is perfectly straight; a curled finger
+    /// folds back on itself and scores much lower.
     ///
-    /// - Parameters:
-    ///   - wrist: the wrist joint.
-    ///   - knuckles: the four finger-base joints (index to little finger).
-    ///   - fingertips: the four fingertip joints, in the same order.
-    ///   - extendedRatio: tip-to-wrist over knuckle-to-wrist at or above which a
-    ///     finger counts as extended.
-    ///   - curledRatio: the ratio at or below which a finger counts as curled.
-    public static func classify(wrist: CGPoint, knuckles: [CGPoint], fingertips: [CGPoint],
-                                extendedRatio: Double = 1.4,
-                                curledRatio: Double = 1.1) -> HandPose {
-        guard knuckles.count == 4, fingertips.count == 4 else { return .other }
+    /// It needs only the finger's own joints. No wrist, palm width or camera
+    /// distance is involved, so it keeps working when the hand is low in the frame
+    /// and the wrist is out of view, and when the hand is rotated or far away.
+    public static func straightness(of chain: [CGPoint]) -> Double? {
+        guard chain.count >= 2 else { return nil }
 
-        let fingers = zip(knuckles, fingertips).map { knuckle, tip -> Finger in
-            let base = distance(wrist, knuckle)
-            guard base > 0 else { return .undecided }
-            let ratio = distance(wrist, tip) / base
-            if ratio >= extendedRatio { return .extended }
-            if ratio <= curledRatio { return .curled }
+        var length = 0.0
+        for (a, b) in zip(chain, chain.dropFirst()) {
+            length += distance(a, b)
+        }
+        guard length > 0 else { return nil }
+        return distance(chain[0], chain[chain.count - 1]) / length
+    }
+
+    /// - Parameters:
+    ///   - fingers: the four fingers, index to little. Each is its joints from the
+    ///     knuckle to the fingertip. A finger with a joint missing is passed as an
+    ///     empty array, and the hand then cannot be a pose. The thumb is ignored:
+    ///     it varies too much between people and poses.
+    ///   - extendedStraightness: at or above this a finger counts as extended.
+    ///     Extended fingers measured 0.98 to 1.00.
+    ///   - curledStraightness: at or below this a finger counts as curled. Nothing
+    ///     that was not extended measured above 0.86. The gap between the two is
+    ///     undecided, which keeps a half-bent finger from flickering between poses.
+    public static func classify(fingers: [[CGPoint]],
+                                extendedStraightness: Double = 0.92,
+                                curledStraightness: Double = 0.88) -> HandPose {
+        guard fingers.count == 4 else { return .other }
+
+        let states = fingers.map { chain -> Finger in
+            guard let straight = straightness(of: chain) else { return .undecided }
+            if straight >= extendedStraightness { return .extended }
+            if straight <= curledStraightness { return .curled }
             return .undecided
         }
 
-        switch (fingers[0], fingers[1], fingers[2], fingers[3]) {
+        switch (states[0], states[1], states[2], states[3]) {
         case (.extended, .extended, .extended, .extended):
             return .openPalm
         case (.curled, .curled, .curled, .curled):

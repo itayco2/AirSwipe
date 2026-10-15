@@ -4,79 +4,114 @@ import AirSwipeCore
 
 @Suite("HandPoseClassifier")
 struct HandPoseClassifierTests {
-    // Normalized coordinates, wrist at the bottom, fingers pointing up.
-    private let wrist = CGPoint(x: 0.50, y: 0.20)
-    private let knuckles = [
-        CGPoint(x: 0.44, y: 0.30), CGPoint(x: 0.48, y: 0.31),
-        CGPoint(x: 0.52, y: 0.31), CGPoint(x: 0.56, y: 0.30),
-    ]
-    private let extendedTips = [
-        CGPoint(x: 0.40, y: 0.42), CGPoint(x: 0.47, y: 0.45),
-        CGPoint(x: 0.53, y: 0.45), CGPoint(x: 0.60, y: 0.42),
-    ]
-    private let curledTips = [
-        CGPoint(x: 0.45, y: 0.27), CGPoint(x: 0.48, y: 0.28),
-        CGPoint(x: 0.52, y: 0.28), CGPoint(x: 0.55, y: 0.27),
-    ]
-    // Index fingertip a quarter farther than its knuckle: neither extended nor curled.
-    private let halfwayIndexTip = CGPoint(x: 0.425, y: 0.325)
+    // Each finger is four joints from the knuckle to the tip, drawn pointing up from
+    // a knuckle row at y = 0.30. Values are normalized frame coordinates.
+    private let knuckleX = [0.44, 0.48, 0.52, 0.56]
 
-    /// Build a hand where `extended[i]` says whether finger i is extended.
-    private func tips(extended: [Bool]) -> [CGPoint] {
-        zip(extended, zip(extendedTips, curledTips)).map { isExtended, pair in
-            isExtended ? pair.0 : pair.1
+    /// Joints in a straight line: straightness 1.
+    private func extended(_ x: Double) -> [CGPoint] {
+        [CGPoint(x: x, y: 0.30), CGPoint(x: x, y: 0.36),
+         CGPoint(x: x, y: 0.41), CGPoint(x: x, y: 0.45)]
+    }
+
+    /// Folded back on itself, as a finger curled into the palm: straightness ~0.2.
+    private func curled(_ x: Double) -> [CGPoint] {
+        [CGPoint(x: x, y: 0.30), CGPoint(x: x, y: 0.35),
+         CGPoint(x: x, y: 0.37), CGPoint(x: x, y: 0.33)]
+    }
+
+    /// Bent partway, with straightness 0.90: between "extended" and "curled".
+    private func halfBent(_ x: Double) -> [CGPoint] {
+        [CGPoint(x: x, y: 0.30), CGPoint(x: x, y: 0.36),
+         CGPoint(x: x, y: 0.40), CGPoint(x: x + 0.0266, y: 0.4139)]
+    }
+
+    /// Build a hand where `states[i]` is "e" (extended), "c" (curled) or "h" (half).
+    private func hand(_ states: String) -> [[CGPoint]] {
+        zip(states, knuckleX).map { state, x in
+            switch state {
+            case "e": return extended(x)
+            case "c": return curled(x)
+            default: return halfBent(x)
+            }
         }
     }
 
-    private func pose(of tips: [CGPoint]) -> HandPose {
-        HandPoseClassifier.classify(wrist: wrist, knuckles: knuckles, fingertips: tips)
+    private func pose(_ states: String) -> HandPose {
+        HandPoseClassifier.classify(fingers: hand(states))
+    }
+
+    @Test("a straight finger is straightness 1 and a curled one is far lower")
+    func straightnessOfAChain() throws {
+        let straight = try #require(HandPoseClassifier.straightness(of: extended(0.5)))
+        let folded = try #require(HandPoseClassifier.straightness(of: curled(0.5)))
+        #expect(abs(straight - 1.0) < 0.001)
+        #expect(folded < 0.4)
+        #expect(HandPoseClassifier.straightness(of: []) == nil)
     }
 
     @Test("four extended fingers are an open palm")
     func openPalm() {
-        #expect(pose(of: tips(extended: [true, true, true, true])) == .openPalm)
+        #expect(pose("eeee") == .openPalm)
     }
 
     @Test("four curled fingers are a fist")
     func fist() {
-        #expect(pose(of: tips(extended: [false, false, false, false])) == .fist)
+        #expect(pose("cccc") == .fist)
     }
 
     @Test("only the index finger extended is one finger")
     func oneFinger() {
-        #expect(pose(of: tips(extended: [true, false, false, false])) == .oneFinger)
+        #expect(pose("eccc") == .oneFinger)
     }
 
     @Test("index and middle extended is two fingers")
     func twoFingers() {
-        #expect(pose(of: tips(extended: [true, true, false, false])) == .twoFingers)
+        #expect(pose("eecc") == .twoFingers)
     }
 
     @Test("three fingers is none of the poses, but two fingers still is")
     func threeFingersIsOther() {
-        #expect(pose(of: tips(extended: [true, true, true, false])) == .other)
-        #expect(pose(of: tips(extended: [true, true, false, false])) == .twoFingers)
+        #expect(pose("eeec") == .other)
+        #expect(pose("eecc") == .twoFingers)
     }
 
     @Test("only the ring finger up is not one finger")
     func ringFingerAloneIsOther() {
-        #expect(pose(of: tips(extended: [false, false, true, false])) == .other)
-        #expect(pose(of: tips(extended: [true, false, false, false])) == .oneFinger)
+        #expect(pose("ccec") == .other)
+        #expect(pose("eccc") == .oneFinger)
     }
 
-    @Test("a half-curled finger is undecided, so the hand is not a pose")
-    func halfCurledFingerIsOther() {
-        var hand = tips(extended: [true, true, false, false])
-        hand[0] = halfwayIndexTip
-        #expect(pose(of: hand) == .other)
-        #expect(pose(of: tips(extended: [true, true, false, false])) == .twoFingers)
+    @Test("a half-bent finger is undecided, so the hand is not a pose")
+    func halfBentFingerIsOther() {
+        #expect(pose("hecc") == .other)
+        #expect(pose("eecc") == .twoFingers)
     }
 
-    @Test("missing joints are never a pose, but a complete hand is")
+    @Test("a finger with joints missing is never a pose, but a complete hand is")
     func missingJointsAreOther() {
-        #expect(HandPoseClassifier.classify(
-            wrist: wrist, knuckles: Array(knuckles.dropLast()),
-            fingertips: Array(extendedTips.dropLast())) == .other)
-        #expect(pose(of: tips(extended: [true, true, true, true])) == .openPalm)
+        var incomplete = hand("eeee")
+        incomplete[2] = []
+        #expect(HandPoseClassifier.classify(fingers: incomplete) == .other)
+        #expect(HandPoseClassifier.classify(fingers: Array(hand("eeee").dropLast())) == .other)
+        #expect(pose("eeee") == .openPalm)
+    }
+
+    // The reason this classifier exists: the old one compared fingertips with the
+    // wrist, which is out of view when the hand is low in the frame.
+    @Test("the pose does not depend on size, so a small or distant hand reads the same")
+    func scaleDoesNotMatter() {
+        let small = hand("eecc").map { finger in
+            finger.map { CGPoint(x: $0.x * 0.3, y: $0.y * 0.3) }
+        }
+        #expect(HandPoseClassifier.classify(fingers: small) == .twoFingers)
+    }
+
+    @Test("the pose does not depend on orientation, so a rotated hand reads the same")
+    func rotationDoesNotMatter() {
+        let sideways = hand("eecc").map { finger in
+            finger.map { CGPoint(x: $0.y, y: -$0.x) }
+        }
+        #expect(HandPoseClassifier.classify(fingers: sideways) == .twoFingers)
     }
 }

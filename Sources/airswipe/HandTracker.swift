@@ -7,6 +7,10 @@ import Vision
 ///
 /// Everything beyond joint extraction (which pose is it? did it swipe?) lives in
 /// `AirSwipeCore`, where it can be tested without a camera.
+///
+/// The wrist is deliberately not used. Held low over a keyboard, a hand has its
+/// wrist below the bottom edge of the frame, and anything measured from it turns
+/// to noise. The knuckles and fingers stay in view.
 final class HandTracker {
     private typealias Joint = VNHumanHandPoseObservation.JointName
 
@@ -20,13 +24,17 @@ final class HandTracker {
     /// Joints below this confidence are treated as not seen.
     private let minimumConfidence: Float = 0.3
 
-    private let knuckleJoints: [Joint] = [.indexMCP, .middleMCP, .ringMCP, .littleMCP]
-    private let fingertipJoints: [Joint] = [.indexTip, .middleTip, .ringTip, .littleTip]
+    // Index to little finger, each joint from the knuckle out to the tip.
+    private let fingerJoints: [[Joint]] = [
+        [.indexMCP, .indexPIP, .indexDIP, .indexTip],
+        [.middleMCP, .middlePIP, .middleDIP, .middleTip],
+        [.ringMCP, .ringPIP, .ringDIP, .ringTip],
+        [.littleMCP, .littlePIP, .littleDIP, .littleTip],
+    ]
 
     /// One line describing the latest frame: whether a hand was found, how
-    /// confident each fingertip was, how far each finger reaches past its
-    /// knuckle, which pose that makes, and where the palm is. Only filled in when
-    /// diagnostics are on.
+    /// straight each finger is, which pose that makes, and where the knuckles are.
+    /// Only filled in when diagnostics are on.
     private(set) var diagnostics = ""
 
     /// - Parameters:
@@ -39,7 +47,7 @@ final class HandTracker {
         request.maximumHandCount = 1
     }
 
-    /// Returns nil when no hand (or no wrist) is visible in this frame.
+    /// Returns nil when no hand is visible in this frame.
     func sample(from pixelBuffer: CVPixelBuffer) -> HandSample? {
         do {
             try handler.perform([request], on: pixelBuffer)
@@ -58,109 +66,48 @@ final class HandTracker {
             return recognized.location
         }
 
-        guard let wrist = point(.wrist) else {
-            if collectDiagnostics {
-                diagnostics = "hand=WEAK " + describe(observation, pose: nil, x: nil, y: nil)
-            }
+        // Position: the centroid of the knuckles. It stays in frame when the hand
+        // is low, and it moves less than a fingertip or a wrist.
+        let knuckles = fingerJoints.compactMap { point($0[0]) }
+        guard knuckles.count >= 3 else {
+            if collectDiagnostics { diagnostics = "hand=WEAK knuckles=\(knuckles.count)" }
             return nil
         }
-
-        // Palm center: the wrist plus whichever knuckles were seen. It moves
-        // less than a fingertip, so it makes a steadier thing to track.
-        let knuckles = knuckleJoints.compactMap(point)
-        let palm = [wrist] + knuckles
-        let count = CGFloat(palm.count)
-        var x = palm.map(\.x).reduce(0, +) / count
-        let y = palm.map(\.y).reduce(0, +) / count
+        let count = CGFloat(knuckles.count)
+        var x = knuckles.map(\.x).reduce(0, +) / count
+        let y = knuckles.map(\.y).reduce(0, +) / count
         if mirrorX { x = 1 - x }
 
-        // With any joint missing the classifier cannot judge the hand and reports
-        // `.other`, which the engine treats as "do nothing".
-        let tips = fingertipJoints.compactMap(point)
-        let pose = HandPoseClassifier.classify(wrist: wrist, knuckles: knuckles, fingertips: tips)
+        // Pose: how straight each finger is. A finger with any joint unseen is
+        // passed empty, and the classifier then reports `.other`.
+        let fingers: [[CGPoint]] = fingerJoints.map { joints in
+            let chain = joints.compactMap(point)
+            return chain.count == joints.count ? chain : []
+        }
+        let pose = HandPoseClassifier.classify(fingers: fingers)
 
         if collectDiagnostics {
-            diagnostics = "hand=yes " + describe(observation, pose: pose, x: x, y: y)
+            diagnostics = "hand=yes " + describe(observation, fingers: fingers, pose: pose, x: x, y: y)
         }
         return HandSample(x: Double(x), y: Double(y), pose: pose)
     }
 
     // MARK: - Diagnostics
 
-    /// Raw joint data straight from Vision, ignoring the confidence floor, so we
-    /// can see *why* the hand was classified as it was.
     private func describe(_ observation: VNHumanHandPoseObservation,
-                          pose: HandPose?, x: CGFloat?, y: CGFloat?) -> String {
-        func raw(_ joint: Joint) -> VNRecognizedPoint? {
-            try? observation.recognizedPoint(joint)
-        }
+                          fingers: [[CGPoint]], pose: HandPose, x: CGFloat, y: CGFloat) -> String {
         func format(_ value: Double) -> String { String(format: "%.2f", value) }
 
-        let wrist = raw(.wrist)
-        var confidences: [String] = []
-        var ratios: [String] = []
-
-        for (knuckleJoint, tipJoint) in zip(knuckleJoints, fingertipJoints) {
-            let tip = raw(tipJoint)
-            confidences.append(tip.map { format(Double($0.confidence)) } ?? "--")
-
-            if let wrist, let knuckle = raw(knuckleJoint), let tip {
-                let base = hypot(Double(knuckle.location.x - wrist.location.x),
-                                 Double(knuckle.location.y - wrist.location.y))
-                let reach = hypot(Double(tip.location.x - wrist.location.x),
-                                  Double(tip.location.y - wrist.location.y))
-                ratios.append(base > 0 ? format(reach / base) : "--")
-            } else {
-                ratios.append("--")
-            }
+        let straightness = fingers.map { chain -> String in
+            HandPoseClassifier.straightness(of: chain).map(format) ?? "--"
+        }
+        let wrist = (try? observation.recognizedPoint(.wrist)).map { format(Double($0.confidence)) } ?? "--"
+        let confidences = fingerJoints.map { joints -> String in
+            (try? observation.recognizedPoint(joints[3])).map { format(Double($0.confidence)) } ?? "--"
         }
 
-        // Height of the index and middle fingertips. The engine scrolls from the
-        // palm's height, so comparing the two shows whether a scroll gesture moved
-        // the whole hand or only the fingers.
-        let tipHeights = [Joint.indexTip, .middleTip].compactMap { raw($0)?.location.y }
-        let tipY = tipHeights.isEmpty
-            ? "--"
-            : format(Double(tipHeights.reduce(0, +)) / Double(tipHeights.count))
-
-        let poseText = pose.map { String(describing: $0) } ?? "?"
-        let position = (x != nil && y != nil)
-            ? "x=\(format(Double(x ?? 0))) y=\(format(Double(y ?? 0))) tipY=\(tipY)"
-            : "x=-- y=-- tipY=\(tipY)"
-        let wristText = wrist.map { format(Double($0.confidence)) } ?? "--"
-
-        // Wrist-free measures, for calibrating a pose classifier that keeps working
-        // when the wrist is below the bottom edge of the frame:
-        //   str   how straight each finger is (tip distance over chain length),
-        //         near 1 when extended and much lower when curled
-        //   reach each fingertip's distance from its own knuckle, in palm widths
-        let pipJoints: [Joint] = [.indexPIP, .middlePIP, .ringPIP, .littlePIP]
-        let dipJoints: [Joint] = [.indexDIP, .middleDIP, .ringDIP, .littleDIP]
-        func distance(_ a: VNRecognizedPoint, _ b: VNRecognizedPoint) -> Double {
-            hypot(Double(a.location.x - b.location.x), Double(a.location.y - b.location.y))
-        }
-        var palmWidth = 0.0
-        if let index = raw(.indexMCP), let little = raw(.littleMCP) {
-            palmWidth = distance(index, little)
-        }
-        var straight: [String] = []
-        var reach: [String] = []
-        for i in 0..<4 {
-            guard let mcp = raw(knuckleJoints[i]), let pip = raw(pipJoints[i]),
-                  let dip = raw(dipJoints[i]), let tip = raw(fingertipJoints[i]) else {
-                straight.append("--")
-                reach.append("--")
-                continue
-            }
-            let chain = distance(mcp, pip) + distance(pip, dip) + distance(dip, tip)
-            straight.append(chain > 0 ? format(distance(mcp, tip) / chain) : "--")
-            reach.append(palmWidth > 0 ? format(distance(mcp, tip) / palmWidth) : "--")
-        }
-
-        return "wrist=\(wristText) pose=\(poseText) "
-            + "ratio=\(ratios.joined(separator: "/")) "
-            + "str=\(straight.joined(separator: "/")) "
-            + "reach=\(reach.joined(separator: "/")) palmW=\(format(palmWidth)) "
-            + "tipConf=\(confidences.joined(separator: "/")) \(position)"
+        return "pose=\(pose) str=\(straightness.joined(separator: "/")) "
+            + "tipConf=\(confidences.joined(separator: "/")) wrist=\(wrist) "
+            + "x=\(format(Double(x))) y=\(format(Double(y)))"
     }
 }
