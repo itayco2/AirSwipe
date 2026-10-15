@@ -23,6 +23,13 @@ earlier open-hand model after a real-camera log showed that fast swipes make the
 open/closed reading dip below threshold for ~0.2 s, and that a natural two-finger
 scroll was being read as a fist.
 
+A **return guard** keeps the hand's return stroke from swiping back: after a
+swipe, further swipes are held off until the hand has settled near the swipe's
+origin (0.15 s), rested anywhere for 1.5 s, or 3 s have passed. The motion still
+sitting in the swipe window is discarded when the guard lifts. This was found
+with a real-camera report ("returning to the middle moves the other way") and an
+instrumented test showing the blocked return firing the instant the guard lifted.
+
 Nothing fires unless armed. That single rule is what stops waving at someone
 from changing the page.
 

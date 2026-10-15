@@ -18,6 +18,10 @@ two-finger pose. A pose has to be steady for a moment before it counts, so a
 flicker between poses can't switch modes. Scroll speed is measured from where you
 first showed two fingers.
 
+**The return stroke never swipes.** After a swipe, further swipes wait until your
+hand settles back near where that swipe started (the middle). The guard also
+lifts if you rest anywhere for about 1.5 s, or after 3 s, so it can't get stuck.
+
 ## Status
 
 - **Gesture logic** (`AirSwipeCore`): built test-first, 51 passing tests.
@@ -51,8 +55,9 @@ Start with the dry run and watch the messages before using `--live`.
 2. Click **Allow** on the camera prompt.
 3. Hold a flat open palm still. Expect `armed: hand gestures are on`.
 4. Show **one finger** (index up, other fingers curled), pause a beat, then swipe
-   to **your right**. Expect `swipe right`, then `would go BACK`. Swipe left:
-   `swipe left`, then `would go FORWARD`.
+   to **your right**. Expect `swipe right`, then `would go BACK`. Bring your hand
+   back to the middle: **nothing should fire**. Then swipe left: `swipe left`,
+   then `would go FORWARD`.
 5. Show **two fingers** (index and middle up). Raise your hand: `would scroll UP`.
    Lower it: `would scroll DOWN`.
 6. Go back to an open palm and move around. Nothing should happen.
@@ -82,6 +87,7 @@ Start with the dry run and watch the messages before using `--live`.
 | One or two fingers are not recognized | `--debug`: the extended fingers should show a ratio of about 1.5 or more and the curled ones about 1.1 or less. Curl the other fingers tighter, or tune `extendedRatio` / `curledRatio` in `HandPoseClassifier` |
 | It switches modes too slowly or too eagerly | `poseStableDuration` in `GestureConfig` |
 | Swipes are missed | Lower `swipeMinDistance` or `swipeMaxVerticalRatio` |
+| A swipe is ignored right after another one | The return guard is waiting for your hand to come back to the middle. Return there, or rest about 1.5 s. Tune `swipeReturnGuard` and `swipeHomeRadius` |
 | Scroll creeps with your hand at rest | Raise `scrollDeadZone` |
 
 Every threshold is a field of `GestureConfig` in
