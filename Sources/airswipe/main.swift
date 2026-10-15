@@ -35,7 +35,8 @@ GESTURES (the number of fingers is the command)
   One finger, move right / left             switch screen: like a 3- or 4-finger
                                             trackpad swipe between full-screen apps
                                             and desktops
-  Two fingers, move your hand up / down     scroll: the page follows your hand
+  One finger, flick up / down               scroll about a screen
+  Two fingers, move your hand up / down     fine scroll: the page follows your hand
   Fist, held for half a second              STOP
 """
 
@@ -144,6 +145,8 @@ let camera = CameraSource { pixelBuffer, time in
             DispatchQueue.main.async { status.setArmed(false) }
         case .swipe(let direction):
             print("\(stamp(time))swipe \(direction == .right ? "right" : "left")")
+        case .flick(let direction):
+            print("\(stamp(time))flick \(direction == .up ? "up" : "down")")
         case .scroll:
             break
         }

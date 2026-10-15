@@ -10,7 +10,8 @@ import Foundation
 /// confused with each other:
 ///
 ///     open palm, held still        starts it (arms)
-///     one finger                   swipe mode: left/right motion swipes
+///     one finger                   stroke mode: a quick sideways move swipes,
+///                                  a quick up or down move flicks
 ///     two fingers                  scroll mode: the page follows the hand
 ///     fist, held                   stops it (disarms)
 ///
@@ -20,6 +21,16 @@ public final class GestureEngine {
     private enum State {
         case idle
         case armed
+    }
+
+    private enum Axis {
+        case horizontal
+        case vertical
+    }
+
+    private enum Stroke {
+        case swipe(SwipeDirection)
+        case flick(FlickDirection)
     }
 
     private let config: GestureConfig
@@ -42,18 +53,20 @@ public final class GestureEngine {
     /// Smoothed hand height while the page is following the hand.
     private var followY: Double?
 
-    // Armed: tracking. Position is followed in every pose so that a swipe
+    // Armed: tracking. Position is followed in every pose so that a stroke
     // survives a flicker; the mode only decides whether it counts.
     private var previousTime: TimeInterval?
     private var window: [(time: TimeInterval, x: Double, y: Double)] = []
-    private var lastSwipeTime: TimeInterval = -.infinity
+    private var lastStrokeTime: TimeInterval = -.infinity
 
-    // Armed: the return guard. After a swipe the hand comes back toward where it
-    // started, and that return must not swipe the other way.
+    // Armed: the return guard. After a stroke the hand comes back toward where it
+    // started, and that return must not count as a stroke the other way. Positions
+    // are measured along the axis the stroke used.
     private var awaitingReturn = false
-    private var returnHomeX = 0.5
+    private var returnAxis: Axis = .horizontal
+    private var returnHome = 0.5
     private var guardSince: TimeInterval = 0
-    private var dwellX = 0.5
+    private var dwellValue = 0.5
     private var dwellSince: TimeInterval = 0
 
     // Armed: signals that lead to disarming.
@@ -70,7 +83,8 @@ public final class GestureEngine {
 
     /// One line describing the engine's internal state, for debugging.
     public var diagnostics: String {
-        let guardText = awaitingReturn ? String(format: "ON(home=%.2f)", returnHomeX) : "off"
+        let axisName = returnAxis == .horizontal ? "x" : "y"
+        let guardText = awaitingReturn ? String(format: "ON(%@=%.2f)", axisName, returnHome) : "off"
         return "mode=\(mode) guard=\(guardText)"
     }
 
@@ -103,7 +117,7 @@ public final class GestureEngine {
                 state = .armed
                 holdAnchor = nil
                 lastActivity = time
-                lastSwipeTime = -.infinity
+                lastStrokeTime = -.infinity
                 awaitingReturn = false
                 mode = .openPalm
                 candidatePose = .openPalm
@@ -185,32 +199,38 @@ public final class GestureEngine {
         }
     }
 
-    /// While a swipe's return is pending, watch for the hand to come back. The
-    /// guard lifts when the hand has arrived back at the swipe's origin (the
-    /// middle) and slowed down, so a swipe that follows without a pause is tracked
+    private func value(_ axis: Axis, x: Double, y: Double) -> Double {
+        axis == .horizontal ? x : y
+    }
+
+    /// While a stroke's return is pending, watch for the hand to come back. The
+    /// guard lifts when the hand has arrived back where the stroke started and has
+    /// turned around or slowed, so a stroke that follows without a pause is tracked
     /// while a return that overshoots is not. It also lifts when the hand settles a
-    /// little short of the middle, when it has rested anywhere for a while, or on
-    /// its own after `swipeReturnGuard`, so it can never leave swiping stuck off.
+    /// little short of that point, when it has rested anywhere for a while, or on
+    /// its own after `swipeReturnGuard`, so it can never leave strokes stuck off.
     private func updateReturnGuard(for sample: HandSample, at time: TimeInterval) {
         guard awaitingReturn else { return }
 
-        if abs(sample.x - dwellX) > config.swipeDwellRadius {
-            dwellX = sample.x
+        let current = value(returnAxis, x: sample.x, y: sample.y)
+        if abs(current - dwellValue) > config.swipeDwellRadius {
+            dwellValue = current
             dwellSince = time
         }
         let dwell = time - dwellSince
 
-        // Back at the middle, and either turning around or slowing down. A return
-        // that overshoots does neither until it is well past the middle.
-        let atHome = abs(sample.x - returnHomeX) <= config.swipeHomeRadius
+        // Back at the start point, and either turning around or slowing down. A
+        // return that overshoots does neither until it is well past it.
+        let atHome = abs(current - returnHome) <= config.swipeHomeRadius
         var turnedAround = false
         if window.count >= 2 {
-            let last = window[window.count - 1].x
-            let before = window[window.count - 2].x
-            turnedAround = (last - before) * (sample.x - last) < 0
+            let last = value(returnAxis, x: window[window.count - 1].x, y: window[window.count - 1].y)
+            let before = value(returnAxis, x: window[window.count - 2].x, y: window[window.count - 2].y)
+            turnedAround = (last - before) * (current - last) < 0
         }
-        let arrivedHome = atHome && (turnedAround || isSlow(at: time, x: sample.x))
-        let settledNearHome = abs(dwellX - returnHomeX) <= config.swipeSettleRadius
+        let arrivedHome = atHome && (turnedAround || isSlow(at: time, current: current))
+
+        let settledNearHome = abs(dwellValue - returnHome) <= config.swipeSettleRadius
             && dwell >= config.swipeSettleDwell
         let restedAway = dwell >= config.swipeRestDuration
         let expired = time - guardSince >= config.swipeReturnGuard
@@ -218,69 +238,98 @@ public final class GestureEngine {
         if arrivedHome || settledNearHome || restedAway || expired {
             awaitingReturn = false
             // The window still holds the return stroke. Left in place it would
-            // fire as a swipe the instant the guard lifts. Keep only the last
-            // stretch, which is the slow turnaround a new swipe starts from.
+            // fire the instant the guard lifts. Keep only the last stretch, which
+            // is the slow turnaround a new stroke starts from.
             window.removeAll { time - $0.time > config.swipeSlowWindow }
         }
     }
 
-    /// True once the hand has (nearly) stopped: it moved little over the last
-    /// `swipeSlowWindow` seconds. Needs that much history, and is false without it.
-    private func isSlow(at time: TimeInterval, x: Double) -> Bool {
+    /// True once the hand has (nearly) stopped along the guarded axis: it moved
+    /// little over the last `swipeSlowWindow` seconds. Needs that much history,
+    /// and is false without it.
+    private func isSlow(at time: TimeInterval, current: Double) -> Bool {
         guard let reference = window.last(where: { time - $0.time >= config.swipeSlowWindow }) else {
             return false
         }
-        let elapsed = time - reference.time
-        return abs(x - reference.x) / elapsed <= config.swipeSlowSpeed
+        let before = value(returnAxis, x: reference.x, y: reference.y)
+        return abs(current - before) / (time - reference.time) <= config.swipeSlowSpeed
     }
 
     private func gestureEvents(for sample: HandSample, at time: TimeInterval,
                                dt: Double) -> [GestureEvent] {
-        if let direction = detectSwipe(sample, at: time) {
-            return [.swipe(direction)]
+        if let stroke = detectStroke(sample, at: time) {
+            switch stroke {
+            case .swipe(let direction): return [.swipe(direction)]
+            case .flick(let direction): return [.flick(direction)]
+            }
         }
         guard mode == config.scrollPose else { return [] }
         return scroll(for: sample, dt: dt)
     }
 
-    /// A swipe is a fast, mostly horizontal move made in swipe mode. Its travel is
-    /// measured from the turnaround point in the recent window, not from the
-    /// oldest sample, so a swipe straight after a return keeps the distance the
-    /// hand covered on its way back to the middle. After one fires, further swipes
-    /// are suppressed for `swipeCooldown`, and then until the hand has returned
-    /// (see `updateReturnGuard`), which keeps the return stroke from swiping the
-    /// other way.
-    private func detectSwipe(_ sample: HandSample, at time: TimeInterval) -> SwipeDirection? {
+    /// A stroke is a fast, mostly straight move made in stroke mode, sideways for a
+    /// swipe or up and down for a flick. Its travel is measured from the turnaround
+    /// point in the recent window, not from the oldest sample, so a stroke straight
+    /// after a return keeps the distance the hand covered on its way back. A move
+    /// that is diagonal is neither. After a stroke fires, further strokes are
+    /// suppressed for `swipeCooldown`, and then until the hand has returned (see
+    /// `updateReturnGuard`), which keeps the return from counting the other way.
+    private func detectStroke(_ sample: HandSample, at time: TimeInterval) -> Stroke? {
         window.append((time, sample.x, sample.y))
         window.removeAll { time - $0.time > config.swipeWindow }
 
         guard mode == config.swipePose,
               !awaitingReturn,
-              time - lastSwipeTime >= config.swipeCooldown,
-              let low = window.min(by: { $0.x < $1.x }),
-              let high = window.max(by: { $0.x < $1.x }) else {
+              time - lastStrokeTime >= config.swipeCooldown,
+              let lowX = window.min(by: { $0.x < $1.x }),
+              let highX = window.max(by: { $0.x < $1.x }),
+              let lowY = window.min(by: { $0.y < $1.y }),
+              let highY = window.max(by: { $0.y < $1.y }) else {
             return nil
         }
 
-        let rightward = sample.x - low.x
-        let leftward = high.x - sample.x
-        let isRight = rightward >= leftward
-        let travel = isRight ? rightward : leftward
-        let origin = isRight ? low : high
+        // Sideways.
+        let rightward = sample.x - lowX.x
+        let leftward = highX.x - sample.x
+        let goesRight = rightward >= leftward
+        let travelX = goesRight ? rightward : leftward
+        let originX = goesRight ? lowX : highX
+        let isSideways = travelX >= config.swipeMinDistance
+            && abs(sample.y - originX.y) <= config.swipeMaxVerticalRatio * travelX
 
-        guard travel >= config.swipeMinDistance,
-              abs(sample.y - origin.y) <= config.swipeMaxVerticalRatio * travel else {
-            return nil
+        // Up and down.
+        let upward = sample.y - lowY.y
+        let downward = highY.y - sample.y
+        let goesUp = upward >= downward
+        let travelY = goesUp ? upward : downward
+        let originY = goesUp ? lowY : highY
+        let isVertical = travelY >= config.swipeMinDistance
+            && abs(sample.x - originY.x) <= config.swipeMaxVerticalRatio * travelY
+
+        let axis: Axis
+        switch (isSideways, isVertical) {
+        case (false, false): return nil
+        case (true, false): axis = .horizontal
+        case (false, true): axis = .vertical
+        case (true, true): axis = travelX >= travelY ? .horizontal : .vertical
         }
 
-        lastSwipeTime = time
+        lastStrokeTime = time
         awaitingReturn = true
-        returnHomeX = origin.x
+        returnAxis = axis
         guardSince = time
-        dwellX = sample.x
         dwellSince = time
         window.removeAll()
-        return isRight ? .right : .left
+
+        if axis == .horizontal {
+            returnHome = originX.x
+            dwellValue = sample.x
+            return .swipe(goesRight ? .right : .left)
+        } else {
+            returnHome = originY.y
+            dwellValue = sample.y
+            return .flick(goesUp ? .up : .down)
+        }
     }
 
     private func scroll(for sample: HandSample, dt: Double) -> [GestureEvent] {
@@ -321,7 +370,7 @@ public final class GestureEngine {
 
     // MARK: - Helpers
 
-    /// Forget recent motion so stale positions cannot form a swipe or a scroll
+    /// Forget recent motion so stale positions cannot form a stroke or a scroll
     /// jump once the hand comes back.
     private func resetTracking() {
         window.removeAll()

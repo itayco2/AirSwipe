@@ -1,5 +1,6 @@
 import AirSwipeCore
 import ApplicationServices
+import AppKit
 import CoreGraphics
 import Foundation
 
@@ -33,6 +34,10 @@ final class ConsoleSink: ActionSink {
         case .forward:
             print(style == .desktops ? "  -> would move to the screen on the RIGHT"
                                      : "  -> would go FORWARD")
+        case .pageUp:
+            print("  -> would scroll a screen UP")
+        case .pageDown:
+            print("  -> would scroll a screen DOWN")
         case .scroll(let pixels):
             burstPixels += pixels
             scrolledThisFrame = true
@@ -63,7 +68,8 @@ final class CGEventSink: ActionSink {
     enum NavigationStyle {
         /// Back and forward in browsers and many document apps: Cmd+[ and Cmd+].
         case browserHistory
-        /// Move between desktops (Spaces): Ctrl+Left and Ctrl+Right.
+        /// Move between screens (full-screen apps and desktops): Ctrl+Left and
+        /// Ctrl+Right, the same thing the trackpad's 3- or 4-finger swipe does.
         case desktops
     }
 
@@ -75,6 +81,12 @@ final class CGEventSink: ActionSink {
         static let leftArrow: CGKeyCode = 0x7B
         static let rightArrow: CGKeyCode = 0x7C
     }
+
+    /// How much one flick scrolls, as a share of the screen height, and how it is
+    /// spread out so the page glides instead of jumping.
+    private let pageFraction = 0.8
+    private let pageSteps = 12
+    private let pageStepInterval = 0.014
 
     private let style: NavigationStyle
     private let invertScroll: Bool
@@ -110,6 +122,10 @@ final class CGEventSink: ActionSink {
             case .desktops:
                 postKey(Key.rightArrow, flags: [.maskControl, .maskSecondaryFn, .maskNumericPad])
             }
+        case .pageUp:
+            postPage(towardTop: true)
+        case .pageDown:
+            postPage(towardTop: false)
         case .scroll(let pixels):
             postScroll(invertScroll ? -pixels : pixels)
         }
@@ -128,5 +144,24 @@ final class CGEventSink: ActionSink {
         let event = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 1,
                             wheel1: pixels, wheel2: 0, wheel3: 0)
         event?.post(tap: .cghidEventTap)
+    }
+
+    /// About a screen of scrolling, eased out over a short moment so the page
+    /// glides. Scroll events go to whatever is under the pointer.
+    private func postPage(towardTop: Bool) {
+        let height = NSScreen.main?.frame.height ?? 900
+        let total = height * pageFraction
+
+        // Weights fall off so the motion decelerates, then are scaled to the total.
+        let weights = (0..<pageSteps).map { Double(pageSteps - $0) }
+        let weightSum = weights.reduce(0, +)
+        let direction: Int32 = (towardTop != invertScroll) ? 1 : -1
+
+        for (index, weight) in weights.enumerated() {
+            let pixels = Int32((total * weight / weightSum).rounded()) * direction
+            DispatchQueue.main.asyncAfter(deadline: .now() + pageStepInterval * Double(index)) {
+                self.postScroll(pixels)
+            }
+        }
     }
 }

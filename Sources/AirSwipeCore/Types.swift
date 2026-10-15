@@ -37,11 +37,19 @@ public enum SwipeDirection: Equatable {
     case right
 }
 
+/// Direction of a vertical flick, from the user's point of view.
+public enum FlickDirection: Equatable {
+    case up
+    case down
+}
+
 /// What the engine reports back after each sample.
 public enum GestureEvent: Equatable {
     case armed
     case disarmed
     case swipe(SwipeDirection)
+    /// A quick vertical move in one-finger mode: scroll about a screen.
+    case flick(FlickDirection)
     /// Continuous scroll. Positive means the hand is above the neutral height
     /// (scroll toward the top of the page). The value is `rate * dt`, where rate is
     /// -1...1 and 1 is full speed, so the sink multiplies by its pixels-per-second.

@@ -57,4 +57,11 @@ struct ActionMapperTests {
         // Without the reset this would be 0.96 + 0.48 = 1.44 px, i.e. one pixel.
         #expect(mapper.actions(for: .scroll(amount: 0.0004)).isEmpty)
     }
+
+    @Test("a flick up pages up and a flick down pages down")
+    func flicksArePages() {
+        let mapper = ActionMapper()
+        #expect(mapper.actions(for: .flick(.up)) == [.pageUp])
+        #expect(mapper.actions(for: .flick(.down)) == [.pageDown])
+    }
 }

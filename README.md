@@ -3,13 +3,14 @@
 Switch screens and scroll on your Mac by moving your hand in the air. It uses only
 the built-in camera and Apple's Vision framework, and everything runs on-device.
 
-**The number of fingers is the command.**
+**The number of fingers is the command, and one finger does most of it.**
 
 | You show | It does |
 |---|---|
 | ✋ Open palm, held still ~0.5 s | **Start.** Menu-bar icon shows `ON` |
-| ☝️ One finger, move right / left | **Switch screen**, like a 3- or 4-finger trackpad swipe between full-screen apps and desktops (`Ctrl+←/→`) |
-| ✌️ Two fingers, move your hand up / down | **Scroll:** the page follows your hand |
+| ☝️ One finger, move **right / left** | **Switch screen**, like a 3- or 4-finger trackpad swipe between full-screen apps and desktops (`Ctrl+←/→`) |
+| ☝️ One finger, flick **up / down** | **Scroll about a screen** up or down |
+| ✌️ Two fingers, move your hand up / down | **Fine scroll:** the page follows your hand |
 | ✊ Fist, held ~0.5 s (or hand out of view) | **Stop** |
 
 Swipe **right** to go to the screen on the **left**, and swipe **left** to go to
@@ -18,21 +19,24 @@ current screen away and the next one slides in. Chrome and your other app need t
 be on different screens (full-screen apps or separate desktops) for this to have
 an effect. Prefer back/forward inside one app? Run with `--history`.
 
-The pose decides what a movement means, so gestures can't be confused: sideways
-motion only switches screens in the one-finger pose, and up/down motion only
-scrolls in the two-finger pose. A pose has to be steady for a moment before it
-counts, so a flicker between poses can't switch modes.
+**Flick to scroll.** With the same one finger, a quick move up scrolls about a
+screen toward the top and a quick move down scrolls about a screen toward the
+bottom. Each flick is one step, so there is nothing to hold. For a long page,
+flick again. A diagonal move is neither a swipe nor a flick.
 
-**Scrolling follows your hand,** like two fingers on a trackpad: move up and the
-page scrolls up, move down and it scrolls down, hold still and it stops. To go
-farther than your arm reaches, switch to an open palm, reposition, and show two
-fingers again. (`--rate-scroll` restores the older model where hand height sets
-the speed.)
-
-**The return stroke never swipes.** After a swipe, further swipes wait until your
-hand is back at the middle and has turned around or slowed. Your hand can come
-back and go straight into the next swipe with no pause. The guard also lifts if
+**The return never counts.** After a swipe or a flick, your hand has to come back
+before anything else registers, and the move back is ignored. Your hand can come
+back and go straight into the next stroke with no pause. The guard also lifts if
 you rest anywhere for about 1.5 s, or after 3 s, so it can't get stuck.
+
+The pose decides what a movement means, so gestures can't be confused: strokes
+only count in the one-finger pose and fine scrolling only in the two-finger pose.
+A pose has to be steady for a moment before it counts, so a flicker between poses
+can't switch modes.
+
+**Fine scroll follows your hand,** like two fingers on a trackpad: move up and the
+page scrolls up, move down and it scrolls down, hold still and it stops.
+(`--rate-scroll` restores the older model where hand height sets the speed.)
 
 **It works with your hand held low.** Poses come from how *straight* each finger
 is, which needs only the finger's own joints. The wrist, which is out of view when
@@ -41,10 +45,11 @@ the hand.
 
 ## Status
 
-- **Gesture logic** (`AirSwipeCore`): built test-first, 70 passing tests.
+- **Gesture logic** (`AirSwipeCore`): built test-first, 81 passing tests.
 - **Camera layer** (`airswipe`): run on a real camera over several sessions, and
-  the thresholds were set from those logs. Live posting of swipes was confirmed
-  working. Treat feel (scroll gain, swipe distance) as still tunable.
+  the thresholds were set from those logs. Live swipes were confirmed working.
+  Flicks are new and untested on a camera, so treat their feel (distance, screen
+  fraction) as tunable.
 
 ## Requirements
 
@@ -65,7 +70,8 @@ terminal app. `--live` also needs **Accessibility** access for the same app
 (System Settings > Privacy & Security > Accessibility); without it macOS drops
 the events silently.
 
-Start with the dry run and watch the messages before using `--live`.
+Start with the dry run and watch the messages before using `--live`. Scrolling
+goes to whatever is under the mouse pointer, so rest it over the page.
 
 ## Test checklist (about 3 minutes)
 
@@ -76,11 +82,13 @@ Start with the dry run and watch the messages before using `--live`.
    to **your right**. Expect `swipe right`, then `would move to the screen on the
    LEFT`. Bring your hand back to the middle: **nothing should fire**. Then swipe
    left: `swipe left`, then `would move to the screen on the RIGHT`.
-5. Show **two fingers** (index and middle up). Move your hand **up** a little:
-   `would scroll UP`. Move it **down**: `would scroll DOWN`. Hold still: nothing.
-6. Go back to an open palm and move around. Nothing should happen.
-7. Make a fist for about half a second. Expect `disarmed (fist held)`.
-8. If something is off, run with `--debug` and look at `mode=` and `pose=`: they
+5. Still with one finger, flick your hand **up**. Expect `flick up`, then `would
+   scroll a screen UP`. Bring it back: nothing. Flick **down**: `flick down`, then
+   `would scroll a screen DOWN`.
+6. Optional: show **two fingers** and move your hand up and down for fine scroll.
+7. Go back to an open palm and move around. Nothing should happen.
+8. Make a fist for about half a second. Expect `disarmed (fist held)`.
+9. If something is off, run with `--debug` and look at `mode=` and `pose=`: they
    should read `oneFinger` / `twoFingers` for the pose you are showing.
 
 ## Options
@@ -90,8 +98,8 @@ Start with the dry run and watch the messages before using `--live`.
 | *(none)* | Dry run |
 | `--live` | Post real key and scroll events |
 | `--history` | Swipes go back/forward inside an app (`Cmd+[` / `Cmd+]`) instead of switching screens |
-| `--invert-scroll` | Flip the scroll direction |
-| `--rate-scroll` | Scroll by hand height (speed) instead of following the hand |
+| `--invert-scroll` | Flip the scroll direction (flicks and fine scroll) |
+| `--rate-scroll` | Fine scroll by hand height (speed) instead of following the hand |
 | `--no-mirror` | Do not mirror the camera horizontally |
 | `--debug` | Print what the camera layer sees about ten times a second (engine mode and return-guard state, hand found, per-finger straightness, pose, knuckle position, armed state) |
 
@@ -101,14 +109,16 @@ Start with the dry run and watch the messages before using `--live`.
 |---|---|
 | Swipe right moves to the wrong side | `--no-mirror` |
 | Swiping does nothing to Chrome or your other app | They must be on different screens (full-screen apps or desktops). Check that *Move left/right a space* is on in Mission Control keyboard shortcuts |
-| Raising your hand scrolls the wrong way | `--invert-scroll` |
+| Flick up scrolls the wrong way | `--invert-scroll` |
+| A flick scrolls too far or too little | `pageFraction` in `CGEventSink` (default 0.8 of the screen height) |
+| Flicks or swipes are missed | Lower `swipeMinDistance` (default 0.12 of the frame, used for both directions) or raise `swipeWindow` |
+| Diagonal moves fire when they shouldn't, or are ignored when they should count | `swipeMaxVerticalRatio` (how far off-axis a stroke may drift, default 0.6) |
 | It never arms | Hold the palm flat and still, face the camera, add light |
 | One or two fingers are not recognized | `--debug`: `str=` is each finger's straightness. Extended fingers read about 0.98 to 1.00 and curled ones 0.9 or less. Curl the other fingers tighter, or tune `extendedStraightness` / `curledStraightness` in `HandPoseClassifier` |
 | It switches modes too slowly or too eagerly | `poseStableDuration` in `GestureConfig` |
-| Swipes are missed | Lower `swipeMinDistance` (default 0.12 of the frame) or raise `swipeWindow` |
-| A swipe is ignored right after another one | The return guard is waiting for your hand to come back to the middle. Return there, or rest about 1.5 s. Tune `swipeReturnGuard` and `swipeHomeRadius` |
-| Scroll is too fast or too slow | `scrollFollowGain` (default 2.5) |
-| Scroll jitters with your hand at rest | Raise `scrollFollowDeadband` or lower `scrollSmoothing` |
+| A stroke is ignored right after another one | The return guard is waiting for your hand to come back to where the stroke started. Return there, or rest about 1.5 s. Tune `swipeReturnGuard` and `swipeHomeRadius` |
+| Fine scroll is too fast or too slow | `scrollFollowGain` (default 2.5) |
+| Fine scroll jitters with your hand at rest | Raise `scrollFollowDeadband` or lower `scrollSmoothing` |
 
 Every threshold is a field of `GestureConfig` in
 `Sources/AirSwipeCore/Types.swift`, with times in seconds and distances as a
@@ -122,8 +132,9 @@ CameraSource ─frames→ HandTracker ─HandSample?→ GestureEngine ─Gesture
 ```
 
 `HandTracker` turns the Vision joints into a knuckle position and a `HandPose`.
-The engine takes timestamped samples and returns events. It has no camera or
-clock, so false positives can be tested with synthetic hand paths:
+The engine takes timestamped samples and returns events (`swipe`, `flick`,
+`scroll`). It has no camera or clock, so false positives can be tested with
+synthetic hand paths:
 
 ```bash
 swift test
@@ -140,6 +151,7 @@ Design and plan: [`docs/superpowers/specs`](docs/superpowers/specs/2026-10-15-ai
   for your hands and lighting. The thumb is ignored.
 - Your fingers and knuckles have to stay inside the picture. If the hand leaves
   the frame for about a second it stops (`disarmed (hand out of view)`).
-- It sends keyboard shortcuts, not true trackpad gestures, so a swipe only does
-  something where `Ctrl+←/→` (or `Cmd+[` / `Cmd+]` with `--history`) would.
+- It sends keyboard shortcuts and scroll events, not true trackpad gestures, so a
+  swipe only does something where `Ctrl+←/→` (or `Cmd+[` / `Cmd+]` with
+  `--history`) would.
 - Not packaged as an `.app`, not signed or notarized.

@@ -202,13 +202,18 @@ struct SwipeTests {
         #expect(swipes(in: finger) == [.swipe(.left)])
     }
 
-    @Test("a mostly vertical flick is not a swipe, but a horizontal one afterward is")
-    func verticalFlickIgnored() {
+    // A mostly vertical move used to be ignored; it is now a flick (see FlickTests).
+    // What still holds is that it is never a swipe, and that swiping works again once
+    // the hand has come back to where the flick started.
+    @Test("a mostly vertical move is a flick, not a swipe, and swiping works after the return")
+    func verticalMoveIsNotASwipe() {
         var rig = Rig.swiping()
         let flick = rig.move(toX: 0.70, toY: 0.90, over: 0.2)
         #expect(swipes(in: flick).isEmpty)
         rig.hold(for: 0.5)
-        let real = rig.move(toX: 0.30, toY: 0.90, over: 0.2)
+        rig.move(toX: 0.50, toY: 0.50, over: 0.25)
+        rig.hold(for: 0.5)
+        let real = rig.move(toX: 0.20, toY: 0.50, over: 0.2)
         #expect(swipes(in: real) == [.swipe(.left)])
     }
 
@@ -648,5 +653,115 @@ struct DisarmTests {
         var rig = Rig.armed()
         rig.hold(for: 17.0)
         #expect(rig.engine.lastDisarmReason == .idle)
+    }
+}
+
+// MARK: - Flick (vertical move in one-finger mode: scroll about a screen)
+
+/// Only the flick events.
+private func flicks(in events: [GestureEvent]) -> [GestureEvent] {
+    events.filter {
+        if case .flick = $0 { return true }
+        return false
+    }
+}
+
+@Suite("Flick")
+struct FlickTests {
+    @Test("a fast move up with one finger is a flick up")
+    func flickUp() {
+        var rig = Rig.swiping()
+        let events = rig.move(toX: 0.5, toY: 0.72, over: 0.25)
+        #expect(flicks(in: events) == [.flick(.up)])
+        #expect(swipes(in: events).isEmpty)
+    }
+
+    @Test("a fast move down with one finger is a flick down")
+    func flickDown() {
+        var rig = Rig.swiping()
+        let events = rig.move(toX: 0.5, toY: 0.28, over: 0.25)
+        #expect(flicks(in: events) == [.flick(.down)])
+    }
+
+    @Test("a sideways swipe is a swipe, not a flick")
+    func swipeIsNotAFlick() {
+        var rig = Rig.swiping()
+        let events = rig.move(toX: 0.80, toY: 0.5, over: 0.2)
+        #expect(swipes(in: events) == [.swipe(.right)])
+        #expect(flicks(in: events).isEmpty)
+    }
+
+    @Test("a diagonal move is neither, but a clean flick afterward still works")
+    func diagonalIsNeither() {
+        var rig = Rig.swiping()
+        let diagonal = rig.move(toX: 0.68, toY: 0.68, over: 0.25)
+        #expect(swipes(in: diagonal).isEmpty)
+        #expect(flicks(in: diagonal).isEmpty)
+        rig.hold(for: 0.5)
+        let clean = rig.move(toX: 0.68, toY: 0.90, over: 0.25)
+        #expect(flicks(in: clean) == [.flick(.up)])
+    }
+
+    @Test("a slow vertical drift is not a flick, but a quick move afterward is")
+    func slowVerticalDriftIsNotAFlick() {
+        var rig = Rig.swiping()
+        let drift = rig.move(toX: 0.5, toY: 0.85, over: 2.0)
+        #expect(flicks(in: drift).isEmpty)
+        let quick = rig.move(toX: 0.5, toY: 0.55, over: 0.25)
+        #expect(flicks(in: quick) == [.flick(.down)])
+    }
+
+    @Test("the return stroke after a flick is ignored")
+    func returnAfterFlickIsIgnored() {
+        var rig = Rig.swiping()
+        let up = rig.move(toX: 0.5, toY: 0.72, over: 0.25)
+        #expect(flicks(in: up) == [.flick(.up)])
+        rig.hold(for: 1.0)
+        let back = rig.move(toX: 0.5, toY: 0.5, over: 0.25)
+        #expect(flicks(in: back).isEmpty)
+        #expect(swipes(in: back).isEmpty)
+    }
+
+    @Test("a flick straight after the return, with no pause, is tracked")
+    func flickAfterReturnWithoutPause() {
+        var rig = Rig.swiping()
+        var events: [GestureEvent] = []
+        events += rig.move(toX: 0.5, toY: 0.70, over: 0.25)
+        events += rig.hold(for: 0.5)
+        events += rig.move(toX: 0.5, toY: 0.50, over: 0.25)
+        events += rig.move(toX: 0.5, toY: 0.70, over: 0.25)
+        #expect(flicks(in: events) == [.flick(.up), .flick(.up)])
+    }
+
+    @Test("swipes and flicks can follow each other: right, back to the middle, then up")
+    func swipeThenFlick() {
+        var rig = Rig.swiping()
+        var events: [GestureEvent] = []
+        events += rig.move(toX: 0.75, toY: 0.5, over: 0.25)
+        events += rig.hold(for: 0.5)
+        events += rig.move(toX: 0.50, toY: 0.5, over: 0.25)
+        events += rig.hold(for: 0.5)
+        events += rig.move(toX: 0.50, toY: 0.72, over: 0.25)
+        #expect(swipes(in: events) == [.swipe(.right)])
+        #expect(flicks(in: events) == [.flick(.up)])
+    }
+
+    @Test("two fingers move the page and do not flick")
+    func twoFingersDoNotFlick() {
+        var rig = Rig.scrolling()
+        let events = rig.move(toX: 0.5, toY: 0.75, over: 0.25)
+        #expect(flicks(in: events).isEmpty)
+        #expect(!scrolls(in: events).isEmpty)
+    }
+
+    @Test("an open palm moving up or down is not a flick, but one finger is")
+    func openPalmDoesNotFlick() {
+        var rig = Rig.armed()
+        let palm = rig.move(toX: 0.5, toY: 0.75, over: 0.25)
+        #expect(flicks(in: palm).isEmpty)
+        rig.hold(for: 0.5)
+        rig.show(.oneFinger)
+        let finger = rig.move(toX: 0.5, toY: 0.50, over: 0.25)
+        #expect(flicks(in: finger) == [.flick(.down)])
     }
 }
