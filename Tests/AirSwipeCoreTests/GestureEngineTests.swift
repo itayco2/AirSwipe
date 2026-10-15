@@ -764,4 +764,78 @@ struct FlickTests {
         let finger = rig.move(toX: 0.5, toY: 0.50, over: 0.25)
         #expect(flicks(in: finger) == [.flick(.down)])
     }
+
+    // Field evidence: a dry run showed seven flicks up and none down. Flicking down
+    // straight after flicking up is also the return stroke, which is ignored, so
+    // every "down" of an up/down bounce was being swallowed. A move that carries on
+    // well past the middle is a deliberate stroke the other way, not a return.
+    @Test("flick up, then carry on down past the middle, is a flick down")
+    func bounceUpThenDown() {
+        var rig = Rig.swiping()
+        var events: [GestureEvent] = []
+        events += rig.move(toX: 0.5, toY: 0.70, over: 0.25)
+        events += rig.move(toX: 0.5, toY: 0.30, over: 0.40)
+        #expect(flicks(in: events) == [.flick(.up), .flick(.down)])
+    }
+
+    @Test("a continuous up and down bounce flicks every time")
+    func continuousBounce() {
+        var rig = Rig.swiping()
+        var events: [GestureEvent] = []
+        events += rig.move(toX: 0.5, toY: 0.70, over: 0.25)
+        events += rig.move(toX: 0.5, toY: 0.30, over: 0.40)
+        events += rig.move(toX: 0.5, toY: 0.70, over: 0.40)
+        events += rig.move(toX: 0.5, toY: 0.30, over: 0.40)
+        #expect(flicks(in: events) == [.flick(.up), .flick(.down), .flick(.up), .flick(.down)])
+    }
+
+    @Test("a return that only slightly overshoots the middle is still ignored")
+    func slightOvershootAfterFlickIsIgnored() {
+        var rig = Rig.swiping()
+        let up = rig.move(toX: 0.5, toY: 0.70, over: 0.25)
+        #expect(flicks(in: up) == [.flick(.up)])
+        rig.hold(for: 0.5)
+        let back = rig.move(toX: 0.5, toY: 0.44, over: 0.25)
+        #expect(flicks(in: back).isEmpty)
+    }
+
+    @Test("carrying on in the same direction after a flick does nothing")
+    func sameDirectionAfterFlickIsIgnored() {
+        var rig = Rig.swiping()
+        var events: [GestureEvent] = []
+        events += rig.move(toX: 0.5, toY: 0.70, over: 0.25)
+        events += rig.move(toX: 0.5, toY: 0.95, over: 0.30)
+        #expect(flicks(in: events) == [.flick(.up)])
+    }
+
+    @Test("a sideways bounce works the same way: right, then carry on left past the middle")
+    func sidewaysBounce() {
+        var rig = Rig.swiping()
+        var events: [GestureEvent] = []
+        events += rig.move(toX: 0.75, toY: 0.5, over: 0.25)
+        events += rig.move(toX: 0.25, toY: 0.5, over: 0.40)
+        #expect(swipes(in: events) == [.swipe(.right), .swipe(.left)])
+    }
+
+    // Field evidence: the hand rests low in the frame, so there is little room
+    // below it. Vertical strokes need a smaller threshold than sideways ones.
+    @Test("a small vertical flick is tracked, though a small sideways move is not a swipe")
+    func smallVerticalFlickIsTracked() {
+        var rig = Rig.swiping()
+        let sideways = rig.move(toX: 0.59, toY: 0.5, over: 0.25)
+        #expect(swipes(in: sideways).isEmpty)
+        rig.hold(for: 0.5)
+        let vertical = rig.move(toX: 0.59, toY: 0.59, over: 0.25)
+        #expect(flicks(in: vertical) == [.flick(.up)])
+    }
+
+    @Test("a small flick down is tracked too")
+    func smallFlickDownIsTracked() {
+        var rig = Rig.swiping()
+        // Reposition slowly: a quick move there would itself be a flick down.
+        rig.move(toX: 0.5, toY: 0.30, over: 2.0)
+        rig.hold(for: 0.5)
+        let down = rig.move(toX: 0.5, toY: 0.21, over: 0.25)
+        #expect(flicks(in: down) == [.flick(.down)])
+    }
 }

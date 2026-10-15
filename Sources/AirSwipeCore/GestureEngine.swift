@@ -61,9 +61,11 @@ public final class GestureEngine {
 
     // Armed: the return guard. After a stroke the hand comes back toward where it
     // started, and that return must not count as a stroke the other way. Positions
-    // are measured along the axis the stroke used.
+    // are measured along the axis the stroke used. `returnDirection` is +1 for a
+    // stroke that went right or up and -1 for one that went left or down.
     private var awaitingReturn = false
     private var returnAxis: Axis = .horizontal
+    private var returnDirection = 1.0
     private var returnHome = 0.5
     private var guardSince: TimeInterval = 0
     private var dwellValue = 0.5
@@ -203,6 +205,10 @@ public final class GestureEngine {
         axis == .horizontal ? x : y
     }
 
+    private func minDistance(for axis: Axis) -> Double {
+        axis == .horizontal ? config.swipeMinDistance : config.flickMinDistance
+    }
+
     /// While a stroke's return is pending, watch for the hand to come back. The
     /// guard lifts when the hand has arrived back where the stroke started and has
     /// turned around or slowed, so a stroke that follows without a pause is tracked
@@ -211,6 +217,9 @@ public final class GestureEngine {
     /// its own after `swipeReturnGuard`, so it can never leave strokes stuck off.
     private func updateReturnGuard(for sample: HandSample, at time: TimeInterval) {
         guard awaitingReturn else { return }
+
+        let homeRadius = returnAxis == .horizontal ? config.swipeHomeRadius : config.flickHomeRadius
+        let settleRadius = returnAxis == .horizontal ? config.swipeSettleRadius : config.flickSettleRadius
 
         let current = value(returnAxis, x: sample.x, y: sample.y)
         if abs(current - dwellValue) > config.swipeDwellRadius {
@@ -221,7 +230,7 @@ public final class GestureEngine {
 
         // Back at the start point, and either turning around or slowing down. A
         // return that overshoots does neither until it is well past it.
-        let atHome = abs(current - returnHome) <= config.swipeHomeRadius
+        let atHome = abs(current - returnHome) <= homeRadius
         var turnedAround = false
         if window.count >= 2 {
             let last = value(returnAxis, x: window[window.count - 1].x, y: window[window.count - 1].y)
@@ -230,7 +239,7 @@ public final class GestureEngine {
         }
         let arrivedHome = atHome && (turnedAround || isSlow(at: time, current: current))
 
-        let settledNearHome = abs(dwellValue - returnHome) <= config.swipeSettleRadius
+        let settledNearHome = abs(dwellValue - returnHome) <= settleRadius
             && dwell >= config.swipeSettleDwell
         let restedAway = dwell >= config.swipeRestDuration
         let expired = time - guardSince >= config.swipeReturnGuard
@@ -271,16 +280,18 @@ public final class GestureEngine {
     /// swipe or up and down for a flick. Its travel is measured from the turnaround
     /// point in the recent window, not from the oldest sample, so a stroke straight
     /// after a return keeps the distance the hand covered on its way back. A move
-    /// that is diagonal is neither. After a stroke fires, further strokes are
-    /// suppressed for `swipeCooldown`, and then until the hand has returned (see
-    /// `updateReturnGuard`), which keeps the return from counting the other way.
+    /// that is diagonal is neither.
+    ///
+    /// After a stroke fires, the next one waits for the hand to return (see
+    /// `updateReturnGuard`), which keeps the move back from counting the other way.
+    /// The one exception is a *carry-on*: a move the other way that goes a full
+    /// stroke past where the previous one began. That is deliberate, not a return,
+    /// and it is what lets an up-and-down or side-to-side bounce work.
     private func detectStroke(_ sample: HandSample, at time: TimeInterval) -> Stroke? {
         window.append((time, sample.x, sample.y))
         window.removeAll { time - $0.time > config.swipeWindow }
 
         guard mode == config.swipePose,
-              !awaitingReturn,
-              time - lastStrokeTime >= config.swipeCooldown,
               let lowX = window.min(by: { $0.x < $1.x }),
               let highX = window.max(by: { $0.x < $1.x }),
               let lowY = window.min(by: { $0.y < $1.y }),
@@ -303,7 +314,7 @@ public final class GestureEngine {
         let goesUp = upward >= downward
         let travelY = goesUp ? upward : downward
         let originY = goesUp ? lowY : highY
-        let isVertical = travelY >= config.swipeMinDistance
+        let isVertical = travelY >= config.flickMinDistance
             && abs(sample.x - originY.x) <= config.swipeMaxVerticalRatio * travelY
 
         let axis: Axis
@@ -311,25 +322,47 @@ public final class GestureEngine {
         case (false, false): return nil
         case (true, false): axis = .horizontal
         case (false, true): axis = .vertical
-        case (true, true): axis = travelX >= travelY ? .horizontal : .vertical
+        case (true, true):
+            let sidewaysShare = travelX / config.swipeMinDistance
+            let verticalShare = travelY / config.flickMinDistance
+            axis = sidewaysShare >= verticalShare ? .horizontal : .vertical
+        }
+
+        let isPositive = axis == .horizontal ? goesRight : goesUp
+        let direction = isPositive ? 1.0 : -1.0
+        let current = value(axis, x: sample.x, y: sample.y)
+
+        var isCarryOn = false
+        if awaitingReturn {
+            // Only a carry-on counts while a return is pending: same axis, the
+            // opposite way, and a full stroke past where the previous one began.
+            guard axis == returnAxis, direction == -returnDirection,
+                  (returnHome - current) * returnDirection >= minDistance(for: axis) else {
+                return nil
+            }
+            isCarryOn = true
+        } else if time - lastStrokeTime < config.swipeCooldown {
+            return nil
         }
 
         lastStrokeTime = time
         awaitingReturn = true
         returnAxis = axis
+        returnDirection = direction
+        if !isCarryOn {
+            // A carry-on keeps the earlier start point as home, so a bounce stays
+            // centred on the middle instead of drifting toward each extreme.
+            returnHome = axis == .horizontal ? originX.x : originY.y
+        }
         guardSince = time
+        dwellValue = current
         dwellSince = time
         window.removeAll()
 
         if axis == .horizontal {
-            returnHome = originX.x
-            dwellValue = sample.x
             return .swipe(goesRight ? .right : .left)
-        } else {
-            returnHome = originY.y
-            dwellValue = sample.y
-            return .flick(goesUp ? .up : .down)
         }
+        return .flick(goesUp ? .up : .down)
     }
 
     private func scroll(for sample: HandSample, dt: Double) -> [GestureEvent] {

@@ -24,6 +24,12 @@ screen toward the top and a quick move down scrolls about a screen toward the
 bottom. Each flick is one step, so there is nothing to hold. For a long page,
 flick again. A diagonal move is neither a swipe nor a flick.
 
+**You can bounce.** Flick up, then carry on down past the middle in one motion,
+and the move down counts as a flick down; the same goes for left and right. A
+move back that simply *stops at the middle* (or overshoots it a little) is a
+return and is ignored. Up and down need less distance than left and right, since
+a hand held low has little room below it.
+
 **The return never counts.** After a swipe or a flick, your hand has to come back
 before anything else registers, and the move back is ignored. Your hand can come
 back and go straight into the next stroke with no pause. The guard also lifts if
@@ -45,7 +51,7 @@ the hand.
 
 ## Status
 
-- **Gesture logic** (`AirSwipeCore`): built test-first, 81 passing tests.
+- **Gesture logic** (`AirSwipeCore`): built test-first, 88 passing tests.
 - **Camera layer** (`airswipe`): run on a real camera over several sessions, and
   the thresholds were set from those logs. Live swipes were confirmed working.
   Flicks are new and untested on a camera, so treat their feel (distance, screen
@@ -111,7 +117,8 @@ goes to whatever is under the mouse pointer, so rest it over the page.
 | Swiping does nothing to Chrome or your other app | They must be on different screens (full-screen apps or desktops). Check that *Move left/right a space* is on in Mission Control keyboard shortcuts |
 | Flick up scrolls the wrong way | `--invert-scroll` |
 | A flick scrolls too far or too little | `pageFraction` in `CGEventSink` (default 0.8 of the screen height) |
-| Flicks or swipes are missed | Lower `swipeMinDistance` (default 0.12 of the frame, used for both directions) or raise `swipeWindow` |
+| Swipes are missed | Lower `swipeMinDistance` (default 0.12 of the frame) or raise `swipeWindow` |
+| Flicks are missed, or a flick down does not register | Lower `flickMinDistance` (default 0.08 of the frame). Hold your hand a little higher in the picture so there is room to move down. Flick up, then *carry on* down past the middle |
 | Diagonal moves fire when they shouldn't, or are ignored when they should count | `swipeMaxVerticalRatio` (how far off-axis a stroke may drift, default 0.6) |
 | It never arms | Hold the palm flat and still, face the camera, add light |
 | One or two fingers are not recognized | `--debug`: `str=` is each finger's straightness. Extended fingers read about 0.98 to 1.00 and curled ones 0.9 or less. Curl the other fingers tighter, or tune `extendedStraightness` / `curledStraightness` in `HandPoseClassifier` |

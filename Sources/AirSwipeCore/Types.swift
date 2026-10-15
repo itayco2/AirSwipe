@@ -117,6 +117,13 @@ public struct GestureConfig: Equatable {
     public var swipeSlowWindow: Double = 0.10
     public var swipeSlowSpeed: Double = 0.30
 
+    // Up and down (flick). There is less room to move vertically, especially with
+    // the hand held low in the frame, so these are smaller than the sideways ones.
+    // As with the sideways pair, the two radii must stay below `flickMinDistance`.
+    public var flickMinDistance: Double = 0.08
+    public var flickHomeRadius: Double = 0.05
+    public var flickSettleRadius: Double = 0.06
+
     // Return guard: after a swipe the hand comes back toward where it started, and
     // that return must not swipe the other way. Swipes are held off until the hand
     // settles near the swipe's origin, rests elsewhere, or the guard expires.
