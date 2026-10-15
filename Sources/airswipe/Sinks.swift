@@ -16,16 +16,23 @@ extension ActionSink {
 
 /// Dry run: says what would happen and touches nothing.
 final class ConsoleSink: ActionSink {
+    private let style: CGEventSink.NavigationStyle
     private var burstPixels: Int32 = 0
     private var scrolledThisFrame = false
     private var lastReport = Date.distantPast
 
+    init(style: CGEventSink.NavigationStyle) {
+        self.style = style
+    }
+
     func perform(_ action: Action) {
         switch action {
         case .back:
-            print("  -> would go BACK")
+            print(style == .desktops ? "  -> would move to the screen on the LEFT"
+                                     : "  -> would go BACK")
         case .forward:
-            print("  -> would go FORWARD")
+            print(style == .desktops ? "  -> would move to the screen on the RIGHT"
+                                     : "  -> would go FORWARD")
         case .scroll(let pixels):
             burstPixels += pixels
             scrolledThisFrame = true
@@ -87,15 +94,21 @@ final class CGEventSink: ActionSink {
 
     func perform(_ action: Action) {
         switch action {
+        // A real arrow key press also carries the function and numeric-pad flags,
+        // and the system "move a space" shortcuts expect them, so match hardware.
         case .back:
             switch style {
-            case .browserHistory: postKey(Key.leftBracket, flags: .maskCommand)
-            case .desktops: postKey(Key.leftArrow, flags: .maskControl)
+            case .browserHistory:
+                postKey(Key.leftBracket, flags: .maskCommand)
+            case .desktops:
+                postKey(Key.leftArrow, flags: [.maskControl, .maskSecondaryFn, .maskNumericPad])
             }
         case .forward:
             switch style {
-            case .browserHistory: postKey(Key.rightBracket, flags: .maskCommand)
-            case .desktops: postKey(Key.rightArrow, flags: .maskControl)
+            case .browserHistory:
+                postKey(Key.rightBracket, flags: .maskCommand)
+            case .desktops:
+                postKey(Key.rightArrow, flags: [.maskControl, .maskSecondaryFn, .maskNumericPad])
             }
         case .scroll(let pixels):
             postScroll(invertScroll ? -pixels : pixels)

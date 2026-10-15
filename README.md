@@ -1,6 +1,6 @@
 # AirSwipe
 
-Change pages and scroll on your Mac by moving your hand in the air. It uses only
+Switch screens and scroll on your Mac by moving your hand in the air. It uses only
 the built-in camera and Apple's Vision framework, and everything runs on-device.
 
 **The number of fingers is the command.**
@@ -8,14 +8,20 @@ the built-in camera and Apple's Vision framework, and everything runs on-device.
 | You show | It does |
 |---|---|
 | ✋ Open palm, held still ~0.5 s | **Start.** Menu-bar icon shows `ON` |
-| ☝️ One finger, move right / left | **Swipe:** Back / Forward (`Cmd+[` / `Cmd+]`) |
+| ☝️ One finger, move right / left | **Switch screen**, like a 3- or 4-finger trackpad swipe between full-screen apps and desktops (`Ctrl+←/→`) |
 | ✌️ Two fingers, move your hand up / down | **Scroll:** the page follows your hand |
 | ✊ Fist, held ~0.5 s (or hand out of view) | **Stop** |
 
+Swipe **right** to go to the screen on the **left**, and swipe **left** to go to
+the screen on the **right**, exactly as on the trackpad: your hand pushes the
+current screen away and the next one slides in. Chrome and your other app need to
+be on different screens (full-screen apps or separate desktops) for this to have
+an effect. Prefer back/forward inside one app? Run with `--history`.
+
 The pose decides what a movement means, so gestures can't be confused: sideways
-motion only swipes in the one-finger pose, and up/down motion only scrolls in the
-two-finger pose. A pose has to be steady for a moment before it counts, so a
-flicker between poses can't switch modes.
+motion only switches screens in the one-finger pose, and up/down motion only
+scrolls in the two-finger pose. A pose has to be steady for a moment before it
+counts, so a flicker between poses can't switch modes.
 
 **Scrolling follows your hand,** like two fingers on a trackpad: move up and the
 page scrolls up, move down and it scrolls down, hold still and it stops. To go
@@ -37,21 +43,21 @@ the hand.
 
 - **Gesture logic** (`AirSwipeCore`): built test-first, 70 passing tests.
 - **Camera layer** (`airswipe`): run on a real camera over several sessions, and
-  the thresholds were set from those logs. Finger straightness was calibrated
-  with the wrist in view. Behavior with the hand at the very bottom edge of the
-  frame should be confirmed on a camera. Treat feel (scroll gain, swipe distance)
-  as still tunable.
+  the thresholds were set from those logs. Live posting of swipes was confirmed
+  working. Treat feel (scroll gain, swipe distance) as still tunable.
 
 ## Requirements
 
 - macOS 13 or later, Apple Silicon or Intel
 - Swift 5.9+ (the Xcode Command Line Tools are enough; Xcode.app is not needed)
+- For switching screens: *Move left/right a space* turned on under System Settings >
+  Keyboard > Keyboard Shortcuts > Mission Control (it is on by default)
 
 ## First run
 
 ```bash
 swift run airswipe            # dry run: prints what it would do, posts nothing
-swift run airswipe --live     # really posts back/forward and scroll events
+swift run airswipe --live     # really posts screen-switch and scroll events
 ```
 
 Run it from Terminal.app or iTerm. macOS will ask for **Camera** access for that
@@ -59,9 +65,7 @@ terminal app. `--live` also needs **Accessibility** access for the same app
 (System Settings > Privacy & Security > Accessibility); without it macOS drops
 the events silently.
 
-Start with the dry run and watch the messages before using `--live`. In live mode
-keep a browser in front: `Cmd+[` and `Cmd+]` are indent and outdent in many code
-editors.
+Start with the dry run and watch the messages before using `--live`.
 
 ## Test checklist (about 3 minutes)
 
@@ -69,9 +73,9 @@ editors.
 2. Click **Allow** on the camera prompt.
 3. Hold a flat open palm still. Expect `armed: hand gestures are on`.
 4. Show **one finger** (index up, other fingers curled), pause a beat, then swipe
-   to **your right**. Expect `swipe right`, then `would go BACK`. Bring your hand
-   back to the middle: **nothing should fire**. Then swipe left: `swipe left`,
-   then `would go FORWARD`.
+   to **your right**. Expect `swipe right`, then `would move to the screen on the
+   LEFT`. Bring your hand back to the middle: **nothing should fire**. Then swipe
+   left: `swipe left`, then `would move to the screen on the RIGHT`.
 5. Show **two fingers** (index and middle up). Move your hand **up** a little:
    `would scroll UP`. Move it **down**: `would scroll DOWN`. Hold still: nothing.
 6. Go back to an open palm and move around. Nothing should happen.
@@ -85,7 +89,7 @@ editors.
 |---|---|
 | *(none)* | Dry run |
 | `--live` | Post real key and scroll events |
-| `--desktops` | Swipes switch desktops (`Ctrl+←/→`) instead of back/forward |
+| `--history` | Swipes go back/forward inside an app (`Cmd+[` / `Cmd+]`) instead of switching screens |
 | `--invert-scroll` | Flip the scroll direction |
 | `--rate-scroll` | Scroll by hand height (speed) instead of following the hand |
 | `--no-mirror` | Do not mirror the camera horizontally |
@@ -95,7 +99,8 @@ editors.
 
 | Symptom | Try |
 |---|---|
-| Swipe right goes forward instead of back | `--no-mirror` |
+| Swipe right moves to the wrong side | `--no-mirror` |
+| Swiping does nothing to Chrome or your other app | They must be on different screens (full-screen apps or desktops). Check that *Move left/right a space* is on in Mission Control keyboard shortcuts |
 | Raising your hand scrolls the wrong way | `--invert-scroll` |
 | It never arms | Hold the palm flat and still, face the camera, add light |
 | One or two fingers are not recognized | `--debug`: `str=` is each finger's straightness. Extended fingers read about 0.98 to 1.00 and curled ones 0.9 or less. Curl the other fingers tighter, or tune `extendedStraightness` / `curledStraightness` in `HandPoseClassifier` |
@@ -135,6 +140,6 @@ Design and plan: [`docs/superpowers/specs`](docs/superpowers/specs/2026-10-15-ai
   for your hands and lighting. The thumb is ignored.
 - Your fingers and knuckles have to stay inside the picture. If the hand leaves
   the frame for about a second it stops (`disarmed (hand out of view)`).
-- It sends keyboard shortcuts, not true trackpad gestures, so it works in apps
-  that honor `Cmd+[` / `Cmd+]`.
+- It sends keyboard shortcuts, not true trackpad gestures, so a swipe only does
+  something where `Ctrl+←/→` (or `Cmd+[` / `Cmd+]` with `--history`) would.
 - Not packaged as an `.app`, not signed or notarized.

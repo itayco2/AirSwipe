@@ -12,7 +12,7 @@ built-in camera: the trackpad's swipe and scroll, without touching it.
 | Gesture | Effect |
 |---|---|
 | Open palm held still ≈0.5 s | **Start.** Arms the app. The menu-bar icon changes. |
-| One finger (index), fast horizontal move | Hand moves right → Back (`Cmd+[`). Hand moves left → Forward (`Cmd+]`). `--desktops` maps to `ctrl+←/→` instead. |
+| One finger (index), fast horizontal move | **Switches screens**, like the trackpad's 3- or 4-finger swipe between full-screen apps and desktops: hand moves right → screen on the left (`ctrl+←`), hand moves left → screen on the right (`ctrl+→`). `--history` maps to browser back/forward (`Cmd+[` / `Cmd+]`) instead. |
 | Two fingers (index and middle), hand moving up or down | Scrolls up or down: the page follows the hand and stops when it does. `--rate-scroll` restores the earlier model where height above or below the pose's start sets speed. |
 | Fist held ≥0.5 s, hand out of frame ≥1 s, or ~15 s with no gesture | **Stop.** Disarms. Re-arm by holding an open palm again. |
 

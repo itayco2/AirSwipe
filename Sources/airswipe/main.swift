@@ -6,7 +6,7 @@ import Foundation
 
 struct Options {
     var live = false
-    var desktops = false
+    var history = false
     var invertScroll = false
     var rateScroll = false
     var mirror = true
@@ -14,15 +14,16 @@ struct Options {
 }
 
 let usage = """
-airswipe: change pages and scroll by moving your hand in the air.
+airswipe: switch screens and scroll by moving your hand in the air.
 
 USAGE
-  airswipe [--live] [--desktops] [--invert-scroll] [--rate-scroll] [--no-mirror] [--debug]
+  airswipe [--live] [--history] [--invert-scroll] [--rate-scroll] [--no-mirror] [--debug]
 
 OPTIONS
   (default)        Dry run. Prints what it would do and posts nothing.
   --live           Post real key and scroll events (needs Accessibility permission).
-  --desktops       Swipes switch desktops (Ctrl+Left/Right) instead of back/forward.
+  --history        Swipes go back/forward inside an app (Cmd+[ / Cmd+]) instead of
+                   switching screens.
   --invert-scroll  Flip the scroll direction.
   --rate-scroll    Scroll by hand height (speed) instead of following the hand.
   --no-mirror      Do not mirror the camera horizontally.
@@ -31,7 +32,9 @@ OPTIONS
 
 GESTURES (the number of fingers is the command)
   Open palm, held still for half a second   START (menu-bar icon shows ON)
-  One finger, move right / left             swipe: back / forward
+  One finger, move right / left             switch screen: like a 3- or 4-finger
+                                            trackpad swipe between full-screen apps
+                                            and desktops
   Two fingers, move your hand up / down     scroll: the page follows your hand
   Fist, held for half a second              STOP
 """
@@ -41,7 +44,8 @@ func parseOptions(_ arguments: [String]) -> Options {
     for argument in arguments {
         switch argument {
         case "--live": options.live = true
-        case "--desktops": options.desktops = true
+        case "--history": options.history = true
+        case "--desktops": break // now the default; accepted so old commands still run
         case "--invert-scroll": options.invertScroll = true
         case "--rate-scroll": options.rateScroll = true
         case "--no-mirror": options.mirror = false
@@ -80,10 +84,10 @@ if options.live {
 
             """, stderr)
     }
-    sink = CGEventSink(style: options.desktops ? .desktops : .browserHistory,
+    sink = CGEventSink(style: options.history ? .browserHistory : .desktops,
                        invertScroll: options.invertScroll)
 } else {
-    sink = ConsoleSink()
+    sink = ConsoleSink(style: options.history ? .browserHistory : .desktops)
 }
 
 NSApplication.shared.setActivationPolicy(.accessory)
