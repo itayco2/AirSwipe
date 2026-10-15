@@ -115,10 +115,18 @@ final class HandTracker {
             }
         }
 
+        // Height of the index and middle fingertips. The engine scrolls from the
+        // palm's height, so comparing the two shows whether a scroll gesture moved
+        // the whole hand or only the fingers.
+        let tipHeights = [Joint.indexTip, .middleTip].compactMap { raw($0)?.location.y }
+        let tipY = tipHeights.isEmpty
+            ? "--"
+            : format(Double(tipHeights.reduce(0, +)) / Double(tipHeights.count))
+
         let poseText = pose.map { String(describing: $0) } ?? "?"
         let position = (x != nil && y != nil)
-            ? "x=\(format(Double(x ?? 0))) y=\(format(Double(y ?? 0)))"
-            : "x=-- y=--"
+            ? "x=\(format(Double(x ?? 0))) y=\(format(Double(y ?? 0))) tipY=\(tipY)"
+            : "x=-- y=-- tipY=\(tipY)"
         let wristText = wrist.map { format(Double($0.confidence)) } ?? "--"
 
         return "wrist=\(wristText) pose=\(poseText) "
