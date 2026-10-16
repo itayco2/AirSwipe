@@ -1,6 +1,6 @@
 # AirSwipe — Voice Circle Design Spec
 
-**Date:** 2026-10-16 · **Status:** implemented; the key-press spike passed (`docs/superpowers/spike-voice-key.md`); the live camera test is pending
+**Date:** 2026-10-16 · **Status:** implemented and verified live on 2026-10-16 (start circle focuses the Claude message box and starts dictation; stop circle stops it and the text appears; no click needed). Spike: `docs/superpowers/spike-voice-key.md`
 
 ## Goal
 
