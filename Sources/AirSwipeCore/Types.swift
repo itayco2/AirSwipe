@@ -132,11 +132,22 @@ public struct GestureConfig: Equatable {
     public var swipeSlowSpeed: Double = 0.30
 
     // Up and down (flick). There is less room to move vertically, especially with
-    // the hand held low in the frame, so these are smaller than the sideways ones.
-    // As with the sideways pair, the two radii must stay below `flickMinDistance`.
+    // the hand held low in the frame, so the distance is smaller than the sideways one.
     public var flickMinDistance: Double = 0.08
-    public var flickHomeRadius: Double = 0.05
-    public var flickSettleRadius: Double = 0.06
+    /// A flick starts from a rest: the hand must have stayed within `flickRestRadius`
+    /// of one spot for this long. The way back from a flick, the rebound after it and a
+    /// pose flicker all move a hand that is not resting, so none of them can be a flick.
+    public var flickRestDuration: Double = 0.2
+    /// How far the hand may drift and still count as resting. Tremor is about 0.01; a
+    /// pose flicker shifts the reading by 0.04 to 0.05, which breaks the rest.
+    public var flickRestRadius: Double = 0.02
+    /// The hand must be `flickMinDistance` from where it rested within this long of
+    /// leaving it, or it was drifting, not flicking. 0.25 s keeps the old floor of about
+    /// 0.2 of the frame per second.
+    public var flickMoveWindow: Double = 0.25
+    /// After a flick, the opposite direction is ignored for this long. Pausing at the end
+    /// of a flick and then coming back is the way back; after this long it is a new flick.
+    public var flickReverseDelay: Double = 0.8
     /// How much page a flick scrolls per unit of hand travel, in full-speed-seconds
     /// per frame height (the same unit as `scrollFollowGain`). The page follows the
     /// hand while it keeps going the way it flicked, so a move of 0.2 of the picture

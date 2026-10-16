@@ -28,16 +28,20 @@ is how far you moved: a short flick scrolls a little and a long one scrolls a lo
 Stop moving and it stops. A diagonal move is neither a swipe nor a flick. How much
 page you get per hand distance is `flickScrollGain`.
 
-**The return never counts.** After a swipe or a flick, your hand has to come back
-before anything else registers, and the move back is ignored, however far it goes.
-For up and down that means: flick, bring your hand back to the middle, and the next
-flick works straight away, with no pause needed. (There is no "bounce" up and down:
-a hand returning to the middle overshoots it by nearly as much as a deliberate
-flick needs, so the way back can't be told from a new flick.) Sideways, a move that
-carries on a full stroke *past* the middle still counts as a swipe the other way.
-The guard also lifts if you rest anywhere for about 1.5 s, or after 3 s, so it
-can't get stuck. Up and down need less distance than left and right, since a hand
-held low has little room below it.
+**A flick starts from a rest.** Hold your finger still for about a fifth of a second
+(`flickRestDuration`), then flick. The way back from a flick, the bounce after it and a
+flicker of the camera's pose reading all move a hand that was not resting, so none of
+them can be a flick: that is what keeps up and down apart. Flicks the same way in a
+row work with a short pause between them. The *opposite* direction is ignored for
+0.8 s after a flick (`flickReverseDelay`), because pausing at the end of a flick and
+coming back is the way back; after that it is a new flick. Up and down need less
+distance than left and right, since a hand held low has little room below it.
+
+**A swipe's return never counts.** After a swipe, your hand has to come back before the
+next swipe registers, and the move back is ignored, however far it goes. A move that
+carries on a full stroke *past* the middle still counts as a swipe the other way. The
+guard also lifts if you rest anywhere for about 1.5 s, or after 3 s, so it can't get
+stuck.
 
 The pose decides what a movement means, so gestures can't be confused: strokes
 only count in the one-finger pose and fine scrolling only in the two-finger pose.
@@ -180,8 +184,8 @@ goes to whatever is under the mouse pointer, so rest it over the page.
 | A flick scrolls and then the page stops too soon, or keeps going on your way back | `flickFollowReversal` (default 0.015): how far the hand may slip back before the flick counts as over |
 | It stops when you didn't mean to | A fist must be held still: `fistStillnessRadius` (default 0.06) and `fistDisarmDuration` (0.5 s) |
 | Swipes are missed | Lower `swipeMinDistance` (default 0.12 of the frame) or raise `swipeWindow` |
-| Flicks are missed, or a flick down does not register | Lower `flickMinDistance` (default 0.08 of the frame). Hold your hand a little higher in the picture so there is room to move down. After a flick, bring your hand back to the middle before the next one |
-| A flick up or down is missed, or comes out the wrong way | Run with `--debug` and make the move. A `REJECTED` tail names the cause: `mode is …` (the pose was not one finger for long enough), `held by return guard` (the hand had not come back, or the carry-on was too short), `held by cooldown`, or `too far off the axis`. Also check `y=`: a hand resting near 0 has no room to move down |
+| Flicks are missed, or a flick down does not register | Lower `flickMinDistance` (default 0.08 of the frame). Hold your hand a little higher in the picture so there is room to move down. Keep your finger still for about 0.2 s before each flick: a flick straight out of a moving hand is ignored |
+| A flick up or down is missed, or comes out the wrong way | Run with `--debug` and make the move. A `REJECTED` tail names the cause: `mode is …` (the pose was not one finger for long enough), `the hand was not still first` (no rest before the move; `rest=yes` in the debug line shows when the engine counts you as resting), `the way back from the flick …` (the opposite direction within 0.8 s of a flick), `held by return guard` (swipes only: the hand had not come back, or the carry-on was too short), `held by cooldown`, or `too far off the axis`. Also check `y=`: a hand resting near 0 has no room to move down |
 | Diagonal moves fire when they shouldn't, or are ignored when they should count | `swipeMaxVerticalRatio` (how far off-axis a stroke may drift, default 0.6) |
 | It never arms | Hold the palm flat and still, face the camera, add light |
 | The circle does nothing | Arm first, use an **open palm**, and draw it as one loop that comes back to where it started, within 2 s and at least 0.10 of the picture across and down. `--debug` should show `mode=openPalm` while you draw. Tune `circleMinTurn`, `circleMinSize`, `circleWindow` |
@@ -191,7 +195,8 @@ goes to whatever is under the mouse pointer, so rest it over the page.
 | One or two fingers are not recognized | `--debug`: `str=` is each finger's straightness. Extended fingers read about 0.98 to 1.00 and curled ones 0.9 or less. Curl the other fingers tighter, or tune `extendedStraightness` / `curledStraightness` in `HandPoseClassifier` |
 | It switches modes too slowly or too eagerly | `poseStableDuration` in `GestureConfig`. `strokePoseHold` (default 1 s) is how long one-finger mode survives with no one-finger reading |
 | Flicks work with your hand high but not low | The camera reads a hand at the bottom edge badly (the pose turns to `other` or `fist`, the hand can drop out). Hold it so your knuckles sit about mid-picture, with room to move down |
-| A stroke is ignored right after another one | The return guard is waiting for your hand to come back to where the stroke started. Return there, or rest about 1.5 s. Tune `swipeReturnGuard` and `swipeHomeRadius` |
+| A swipe is ignored right after another one | The return guard is waiting for your hand to come back to where the swipe started. Return there, or rest about 1.5 s. Tune `swipeReturnGuard` and `swipeHomeRadius` |
+| A flick is ignored right after another one | It has to start from a rest, so pause about 0.2 s first (`flickRestDuration`; a pose flicker shifts the reading by more than `flickRestRadius`, 0.02, and breaks the rest). The opposite direction also waits `flickReverseDelay` (0.8 s) |
 | Fine scroll is too fast or too slow | `scrollFollowGain` (default 2.5) |
 | Fine scroll jitters with your hand at rest | Raise `scrollFollowDeadband` or lower `scrollSmoothing` |
 

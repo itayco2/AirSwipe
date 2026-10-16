@@ -50,6 +50,27 @@ by how much farther the hand goes the same way, and ends once the hand backs off
 more than `flickFollowReversal` (0.015). The stop gesture now needs the fist held
 still, as arming needs the palm held still.
 
+**Flicks start from a rest (2026-10-16).** A debug capture showed up and down still
+mixing three ways: the return dipped below its start height and the rebound fired a
+flick (the position-based guard lifted at the trough), pose flicker shifted the hand's
+reading by 0.04 to 0.05 so a resting hand seemed to move 0.08 to 0.11, and repeated
+flicks down ended at the bottom edge where the dip's return fired a flick up. All
+three are moves that do not start from a rest, so the vertical return guard was
+replaced by `RestTracker`: a flick needs the hand within `flickRestRadius` (0.02) of
+one spot for `flickRestDuration` (0.2 s), and then `flickMinDistance` (0.08) of travel
+away from *that spot* within `flickMoveWindow` (0.25 s of leaving it, the old floor of
+about 0.2 of the frame per second). Measuring from the rest rather than as the swing
+between the highest and lowest point in the window halves the apparent size of a
+symmetric pose-flicker shift. After a flick the opposite direction is ignored for
+`flickReverseDelay` (0.8 s), because pausing at the end of a flick and coming back is
+the way back; the same direction is not held, so several flicks down in a row work
+with a pause between. Vertical flicks no longer wait for, or set, the sideways return
+guard. A first idea, ignoring unclear-pose frames in the vertical signal, was dropped
+because it would lose real flicks: with the hand low in the frame most readings are
+unclear. Numbers are starting values, to be tuned from a live capture; a pose
+flicker that happens right after the hand has rested in the *other* pose class can
+still look like a flick.
+
 A **return guard** keeps the hand's return stroke from swiping back: after a
 swipe, further swipes are held off until the hand has settled near the swipe's
 origin (0.15 s), rested anywhere for 1.5 s, or 3 s have passed. The motion still

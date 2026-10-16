@@ -724,33 +724,35 @@ struct FlickTests {
         #expect(flicks(in: clean) == [.flick(.up)])
     }
 
-    @Test("a slow vertical drift is not a flick, but a quick move afterward is")
+    @Test("a slow vertical drift is not a flick, but a quick move after a pause is")
     func slowVerticalDriftIsNotAFlick() {
         var rig = Rig.swiping()
         let drift = rig.move(toX: 0.5, toY: 0.85, over: 2.0)
         #expect(flicks(in: drift).isEmpty)
+        rig.hold(for: 0.3)
         let quick = rig.move(toX: 0.5, toY: 0.55, over: 0.25)
         #expect(flicks(in: quick) == [.flick(.down)])
     }
 
-    @Test("the return stroke after a flick is ignored")
+    @Test("the way back after a flick is ignored, even after a short pause at the top")
     func returnAfterFlickIsIgnored() {
         var rig = Rig.swiping()
         let up = rig.move(toX: 0.5, toY: 0.72, over: 0.25)
         #expect(flicks(in: up) == [.flick(.up)])
-        rig.hold(for: 1.0)
+        rig.hold(for: 0.3)
         let back = rig.move(toX: 0.5, toY: 0.5, over: 0.25)
         #expect(flicks(in: back).isEmpty)
         #expect(swipes(in: back).isEmpty)
     }
 
-    @Test("a flick straight after the return, with no pause, is tracked")
-    func flickAfterReturnWithoutPause() {
+    @Test("a flick after the return works once the hand has paused at the middle")
+    func flickAfterReturnWithPause() {
         var rig = Rig.swiping()
         var events: [GestureEvent] = []
         events += rig.move(toX: 0.5, toY: 0.70, over: 0.25)
-        events += rig.hold(for: 0.5)
+        events += rig.hold(for: 0.3)
         events += rig.move(toX: 0.5, toY: 0.50, over: 0.25)
+        events += rig.hold(for: 0.3)
         events += rig.move(toX: 0.5, toY: 0.70, over: 0.25)
         #expect(flicks(in: events) == [.flick(.up), .flick(.up)])
     }
@@ -831,7 +833,7 @@ struct FlickTests {
         var rig = Rig.swiping()
         let up = rig.move(toX: 0.5, toY: 0.70, over: 0.25)
         #expect(flicks(in: up) == [.flick(.up)])
-        rig.hold(for: 0.5)
+        rig.hold(for: 0.3)
         let back = rig.move(toX: 0.5, toY: 0.44, over: 0.25)
         #expect(flicks(in: back).isEmpty)
     }
@@ -877,6 +879,106 @@ struct FlickTests {
     }
 }
 
+// MARK: - Flick rest (a flick starts from a rest)
+
+/// Field evidence (debug capture, 2026-10-16): up and down flicks mixed up three ways.
+/// The hand dipped below its rest height on the way back and the rebound fired a flick;
+/// pose flicker shifted the hand's height by 0.04 to 0.05 and a resting hand seemed to
+/// move; and repeated flicks down ended near the bottom edge where the return of the dip
+/// fired a flick up. All three are moves that do not start from a rest, so a flick now
+/// has to: the hand is still for `flickRestDuration`, then moves `flickMinDistance`
+/// away from where it rested, quickly. After a flick the opposite direction is ignored
+/// for `flickReverseDelay`, so pausing at the end of a flick and coming back is the
+/// way back, not a flick the other way.
+@Suite("Flick rest")
+struct FlickRestTests {
+    /// One frame at a new height: the reading jumps there instead of gliding.
+    @discardableResult
+    private func jump(_ rig: inout Rig, toY y: Double, pose: HandPose) -> [GestureEvent] {
+        rig.move(toX: rig.x, toY: y, over: 1 / rig.fps, pose: pose)
+    }
+
+    @Test("a quick move straight out of motion, with no rest first, is not a flick")
+    func needsARest() {
+        var rig = Rig.swiping()
+        rig.move(toX: 0.5, toY: 0.68, over: 1.2)
+        let quick = rig.move(toX: 0.5, toY: 0.86, over: 0.25)
+        #expect(flicks(in: quick).isEmpty)
+    }
+
+    @Test("a pause of a quarter second is enough of a rest")
+    func shortPauseIsEnough() {
+        var rig = Rig.swiping()
+        rig.move(toX: 0.5, toY: 0.68, over: 1.2)
+        rig.hold(for: 0.25)
+        let quick = rig.move(toX: 0.5, toY: 0.86, over: 0.25)
+        #expect(flicks(in: quick) == [.flick(.up)])
+    }
+
+    @Test("a return that dips below the start and rebounds does not flick on the rebound")
+    func reboundIsIgnored() {
+        var rig = Rig.swiping()
+        var events: [GestureEvent] = []
+        events += rig.move(toX: 0.5, toY: 0.70, over: 0.25)
+        events += rig.hold(for: 0.3)
+        // The trough is just below where the flick started, near enough to "home" that
+        // the old position-based guard lifted there, and the rebound is a flick's length.
+        events += rig.move(toX: 0.5, toY: 0.45, over: 0.40)
+        events += rig.move(toX: 0.5, toY: 0.56, over: 0.25)
+        events += rig.hold(for: 0.5)
+        #expect(flicks(in: events) == [.flick(.up)])
+    }
+
+    @Test("a resting hand whose pose flickers is not flicking")
+    func poseFlickerIsNotAFlick() {
+        var rig = Rig.swiping()
+        var events: [GestureEvent] = []
+        for _ in 0..<5 {
+            events += jump(&rig, toY: 0.55, pose: .fist)
+            events += rig.hold(for: 0.1, pose: .fist)
+            events += jump(&rig, toY: 0.50, pose: .oneFinger)
+            events += rig.hold(for: 0.1, pose: .oneFinger)
+            events += jump(&rig, toY: 0.46, pose: .other)
+            events += rig.hold(for: 0.1, pose: .other)
+            events += jump(&rig, toY: 0.50, pose: .oneFinger)
+            events += rig.hold(for: 0.1, pose: .oneFinger)
+        }
+        #expect(flicks(in: events).isEmpty)
+    }
+
+    @Test("repeated flicks the same way work, with a short pause between them")
+    func repeatedFlicksDown() {
+        var rig = Rig.swiping()
+        var events: [GestureEvent] = []
+        for height in [0.38, 0.26, 0.14] {
+            events += rig.move(toX: 0.5, toY: height, over: 0.25)
+            events += rig.hold(for: 0.3)
+        }
+        #expect(flicks(in: events) == [.flick(.down), .flick(.down), .flick(.down)])
+    }
+
+    @Test("after a long rest the opposite direction is a new flick, not a return")
+    func oppositeAfterLongRest() {
+        var rig = Rig.swiping()
+        var events: [GestureEvent] = []
+        events += rig.move(toX: 0.5, toY: 0.72, over: 0.25)
+        events += rig.hold(for: 1.2)
+        events += rig.move(toX: 0.5, toY: 0.50, over: 0.25)
+        #expect(flicks(in: events) == [.flick(.up), .flick(.down)])
+    }
+
+    @Test("a flick from where a swipe left the hand works after a short rest")
+    func flickAfterSwipe() {
+        var rig = Rig.swiping()
+        var events: [GestureEvent] = []
+        events += rig.move(toX: 0.75, toY: 0.5, over: 0.25)
+        events += rig.hold(for: 0.3)
+        events += rig.move(toX: 0.75, toY: 0.72, over: 0.25)
+        #expect(swipes(in: events) == [.swipe(.right)])
+        #expect(flicks(in: events) == [.flick(.up)])
+    }
+}
+
 // MARK: - Diagnostics
 
 /// `lastRejection` is a debugging aid: when a move is big enough to be a stroke
@@ -894,31 +996,33 @@ struct DiagnosticsTests {
     @Test("a stroke made in the wrong pose says which mode it was in")
     func wrongModeIsExplained() {
         var rig = Rig.armed()
-        rig.move(toX: 0.5, toY: 0.72, over: 0.25)
+        // Quick enough to end inside `flickMoveWindow` of leaving its rest.
+        rig.move(toX: 0.5, toY: 0.72, over: 0.20)
         let why = rig.engine.lastRejection ?? ""
         #expect(why.contains("up"))
         #expect(why.contains("mode is openPalm"))
     }
 
-    @Test("a second move the same way before the return is reported as held")
-    func sameWayWhileGuardedIsExplained() {
+    @Test("a quick move that does not start from a rest says so")
+    func notStillFirstIsExplained() {
         var rig = Rig.swiping()
         rig.move(toX: 0.5, toY: 0.72, over: 0.25)
         rig.move(toX: 0.5, toY: 0.88, over: 0.20)
         let why = rig.engine.lastRejection ?? ""
         #expect(why.contains("up"))
-        #expect(why.contains("same way"))
+        #expect(why.contains("not still"))
     }
 
-    @Test("the way back from a flick is reported as waiting for the middle")
+    @Test("the way back from a flick is reported as the way back")
     func returnAfterFlickIsExplained() {
         var rig = Rig.swiping()
         rig.move(toX: 0.5, toY: 0.72, over: 0.25)
-        // Back down past home (0.5) by 0.05: a return that overshoots, not a flick.
+        rig.hold(for: 0.3)
+        // Back down past where it started: a return that overshoots, not a flick.
         rig.move(toX: 0.5, toY: 0.45, over: 0.20)
         let why = rig.engine.lastRejection ?? ""
         #expect(why.contains("down"))
-        #expect(why.contains("return to the middle"))
+        #expect(why.contains("way back"))
     }
 
     @Test("a sideways return that stops short of a full stroke past home reports the shortfall")
