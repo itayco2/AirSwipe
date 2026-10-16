@@ -55,9 +55,13 @@ public enum HandPoseClassifier {
             return .openPalm
         case (.curled, .curled, .curled, .curled):
             return .fist
-        case (.extended, .curled, .curled, .curled):
+        // The little finger does not decide between one finger and two. It is short,
+        // often hidden behind the others, and often left sticking out: in a real run
+        // it alone turned a clear one-finger hand into `.other` about a third of the
+        // time. The index, middle and ring fingers are what tell the poses apart.
+        case (.extended, .curled, .curled, _):
             return .oneFinger
-        case (.extended, .extended, .curled, .curled):
+        case (.extended, .extended, .curled, _):
             return .twoFingers
         default:
             return .other

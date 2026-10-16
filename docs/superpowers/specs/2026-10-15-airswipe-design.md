@@ -24,6 +24,19 @@ earlier open-hand model after a real-camera log showed that fast swipes make the
 open/closed reading dip below threshold for ~0.2 s, and that a natural two-finger
 scroll was being read as a fist.
 
+**Unclear poses do not end stroke mode.** A real-camera run with `--debug` showed
+flicks down never registering while flicks up did. With the hand low in the frame
+the pose read as `other` or `fist` for most of 10 s (46 of 64 readings), the engine
+dropped out of one-finger mode, and 45 moves of up to 0.25 of the frame, two to
+three times the threshold, were refused for that reason alone. Worse, when the pose
+recovered, the hand's move back up counted as a flick up, which is how "one down
+and eight ups" came about. Two changes followed, both found by replaying the log
+through the engine: readings of `other` or `fist` leave one-finger mode alone
+(`strokePoseHold`, 1 s, ends it if no one-finger reading comes), and the little
+finger no longer decides between one finger and two, since a little finger that
+read as extended caused 13 of the 41 unclear frames. Replaying the same log, the
+engine went from 4 flicks up and none down to a plausible mix of both.
+
 A **return guard** keeps the hand's return stroke from swiping back: after a
 swipe, further swipes are held off until the hand has settled near the swipe's
 origin (0.15 s), rested anywhere for 1.5 s, or 3 s have passed. The motion still

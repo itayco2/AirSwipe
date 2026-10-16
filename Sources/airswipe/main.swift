@@ -64,6 +64,10 @@ func parseOptions(_ arguments: [String]) -> Options {
 
 // MARK: - Wiring
 
+// Piped output (`| tee log`) is block-buffered by default, which would hold lines
+// back and lose the tail on Ctrl-C. Flush at every newline instead.
+setvbuf(stdout, nil, _IOLBF, 0)
+
 let options = parseOptions(Array(CommandLine.arguments.dropFirst()))
 
 var gestureConfig = GestureConfig()

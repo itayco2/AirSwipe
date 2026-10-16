@@ -93,6 +93,11 @@ public struct GestureConfig: Equatable {
     public var swipePose: HandPose = .oneFinger
     /// The pose in which hand height scrolls.
     public var scrollPose: HandPose = .twoFingers
+    /// Strokes survive readings that are merely unclear (`.other`, `.fist`): with the
+    /// hand low in the frame or moving fast the pose often reads that way, and one
+    /// finger is still what the user is showing. Only a clear different pose, held
+    /// steady, or this long without any one-finger reading ends stroke mode.
+    public var strokePoseHold: Double = 1.0
 
     // Disarming
     /// How long a fist must be held to stop the engine.

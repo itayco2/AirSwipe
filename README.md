@@ -38,7 +38,11 @@ you rest anywhere for about 1.5 s, or after 3 s, so it can't get stuck.
 The pose decides what a movement means, so gestures can't be confused: strokes
 only count in the one-finger pose and fine scrolling only in the two-finger pose.
 A pose has to be steady for a moment before it counts, so a flicker between poses
-can't switch modes.
+can't switch modes. One-finger mode is stickier still: a reading that is merely
+unclear (the camera calling it `other` or `fist` for a few frames, which happens
+when your hand is low or moving fast) does not end it, and neither does a little
+finger that sticks out. It ends when you show a clear different pose, or after
+about a second with nothing that looks like one finger.
 
 **Fine scroll follows your hand,** like two fingers on a trackpad: move up and the
 page scrolls up, move down and it scrolls down, hold still and it stops.
@@ -51,7 +55,7 @@ the hand.
 
 ## Status
 
-- **Gesture logic** (`AirSwipeCore`): built test-first, 93 passing tests.
+- **Gesture logic** (`AirSwipeCore`): built test-first, 104 passing tests.
 - **Camera layer** (`airswipe`): run on a real camera over several sessions, and
   the thresholds were set from those logs. Live swipes were confirmed working.
   Flicks are new and untested on a camera, so treat their feel (distance, screen
@@ -123,7 +127,8 @@ goes to whatever is under the mouse pointer, so rest it over the page.
 | Diagonal moves fire when they shouldn't, or are ignored when they should count | `swipeMaxVerticalRatio` (how far off-axis a stroke may drift, default 0.6) |
 | It never arms | Hold the palm flat and still, face the camera, add light |
 | One or two fingers are not recognized | `--debug`: `str=` is each finger's straightness. Extended fingers read about 0.98 to 1.00 and curled ones 0.9 or less. Curl the other fingers tighter, or tune `extendedStraightness` / `curledStraightness` in `HandPoseClassifier` |
-| It switches modes too slowly or too eagerly | `poseStableDuration` in `GestureConfig` |
+| It switches modes too slowly or too eagerly | `poseStableDuration` in `GestureConfig`. `strokePoseHold` (default 1 s) is how long one-finger mode survives with no one-finger reading |
+| Flicks work with your hand high but not low | The camera reads a hand at the bottom edge badly (the pose turns to `other` or `fist`, the hand can drop out). Hold it so your knuckles sit about mid-picture, with room to move down |
 | A stroke is ignored right after another one | The return guard is waiting for your hand to come back to where the stroke started. Return there, or rest about 1.5 s. Tune `swipeReturnGuard` and `swipeHomeRadius` |
 | Fine scroll is too fast or too slow | `scrollFollowGain` (default 2.5) |
 | Fine scroll jitters with your hand at rest | Raise `scrollFollowDeadband` or lower `scrollSmoothing` |
@@ -156,7 +161,8 @@ Design and plan: [`docs/superpowers/specs`](docs/superpowers/specs/2026-10-15-ai
 - One hand, one camera, and it needs reasonable light.
 - Hand pose runs continuously while the app is open, which costs CPU and battery.
 - Poses come from finger straightness, a geometric measure that may need tuning
-  for your hands and lighting. The thumb is ignored.
+  for your hands and lighting. The thumb is ignored, and so is the little finger
+  when telling one finger from two (it is short and often left sticking out).
 - Your fingers and knuckles have to stay inside the picture. If the hand leaves
   the frame for about a second it stops (`disarmed (hand out of view)`).
 - It sends keyboard shortcuts and scroll events, not true trackpad gestures, so a

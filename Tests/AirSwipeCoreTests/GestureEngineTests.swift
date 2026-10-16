@@ -891,3 +891,92 @@ struct DiagnosticsTests {
         #expect((rig.engine.lastRejection ?? "").contains("off the axis"))
     }
 }
+
+// MARK: - Unclear poses
+
+/// Field evidence: with the hand low in the frame, or moving fast, the pose reads as
+/// `other` or `fist` for long stretches (46 of 64 readings in one real run), and the
+/// engine was dropping out of one-finger mode, so moves two to three times the
+/// threshold were ignored. A reading that is merely unclear must not end the mode.
+@Suite("Unclear poses")
+struct UnclearPoseTests {
+    @Test("a flick still counts while the pose reads as something unclear")
+    func flickWithUnclearPose() {
+        var rig = Rig.swiping()
+        rig.hold(for: 0.4, pose: .other)
+        let events = rig.move(toX: 0.5, toY: 0.72, over: 0.25, pose: .other)
+        #expect(flicks(in: events) == [.flick(.up)])
+    }
+
+    @Test("a flick down counts through a brief fist reading and a pose that flickers")
+    func flickDownThroughFlickeringPose() {
+        var rig = Rig.swiping()
+        rig.hold(for: 0.3, pose: .fist)
+        var events: [GestureEvent] = []
+        events += rig.move(toX: 0.5, toY: 0.40, over: 0.1, pose: .other)
+        events += rig.move(toX: 0.5, toY: 0.30, over: 0.1, pose: .fist)
+        events += rig.move(toX: 0.5, toY: 0.20, over: 0.1, pose: .other)
+        #expect(flicks(in: events) == [.flick(.down)])
+    }
+
+    @Test("a swipe counts with an unclear pose too")
+    func swipeWithUnclearPose() {
+        var rig = Rig.swiping()
+        rig.hold(for: 0.4, pose: .other)
+        let events = rig.move(toX: 0.80, toY: 0.5, over: 0.2, pose: .other)
+        #expect(swipes(in: events) == [.swipe(.right)])
+    }
+
+    @Test("a one-finger reading now and then keeps the mode alive")
+    func occasionalOneFingerKeepsTheMode() {
+        var rig = Rig.swiping()
+        for _ in 0..<4 {
+            rig.hold(for: 0.5, pose: .other)
+            rig.hold(for: 0.1, pose: .oneFinger)
+        }
+        let events = rig.move(toX: 0.5, toY: 0.72, over: 0.25, pose: .other)
+        #expect(flicks(in: events) == [.flick(.up)])
+    }
+
+    @Test("but a long stretch of nothing like one finger ends the mode")
+    func longUnclearStretchEndsTheMode() {
+        var rig = Rig.swiping()
+        rig.hold(for: 1.5, pose: .other)
+        let events = rig.move(toX: 0.5, toY: 0.72, over: 0.25, pose: .other)
+        #expect(flicks(in: events).isEmpty)
+        // One finger, shown steadily again, works as usual. Settle first, so the
+        // move above is no longer in the window when the mode comes back.
+        rig.hold(for: 0.6, pose: .other)
+        rig.show(.oneFinger)
+        let again = rig.move(toX: 0.5, toY: 0.95, over: 0.25)
+        #expect(flicks(in: again) == [.flick(.up)])
+    }
+
+    @Test("a steady open palm still takes over from one finger")
+    func openPalmTakesOver() {
+        var rig = Rig.swiping()
+        rig.show(.openPalm)
+        let events = rig.move(toX: 0.80, toY: 0.5, over: 0.2)
+        #expect(swipes(in: events).isEmpty)
+        #expect(flicks(in: events).isEmpty)
+    }
+
+    @Test("two fingers still take over from one finger")
+    func twoFingersTakeOver() {
+        var rig = Rig.swiping()
+        rig.show(.twoFingers)
+        let events = rig.move(toX: 0.80, toY: 0.5, over: 0.2)
+        #expect(swipes(in: events).isEmpty)
+    }
+
+    @Test("open-palm glimpses between unclear readings never add up to a switch")
+    func palmGlimpsesDoNotAddUp() {
+        var rig = Rig.swiping()
+        for _ in 0..<4 {
+            rig.hold(for: 0.1, pose: .openPalm)
+            rig.hold(for: 0.1, pose: .other)
+        }
+        let events = rig.move(toX: 0.5, toY: 0.72, over: 0.25, pose: .other)
+        #expect(flicks(in: events) == [.flick(.up)])
+    }
+}

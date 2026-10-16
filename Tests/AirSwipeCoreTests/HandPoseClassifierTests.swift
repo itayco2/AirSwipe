@@ -76,6 +76,32 @@ struct HandPoseClassifierTests {
         #expect(pose("eecc") == .twoFingers)
     }
 
+    // Field evidence: of 41 unclear readings in one real run, 13 were exactly this,
+    // a pointing hand whose little finger read as extended. The little finger is
+    // short and often left sticking out, so it must not decide between poses.
+    @Test("a little finger that sticks out does not stop one finger being one finger")
+    func littleFingerDoesNotDecideOneFinger() {
+        #expect(pose("ecce") == .oneFinger)
+        #expect(pose("ecch") == .oneFinger)
+        #expect(pose("eccc") == .oneFinger)
+    }
+
+    @Test("nor does it stop two fingers being two fingers")
+    func littleFingerDoesNotDecideTwoFingers() {
+        #expect(pose("eece") == .twoFingers)
+        #expect(pose("eech") == .twoFingers)
+        #expect(pose("eecc") == .twoFingers)
+    }
+
+    @Test("the ring finger still matters, and a lone little finger is no pose")
+    func ringFingerStillDecides() {
+        #expect(pose("ecec") == .other)
+        #expect(pose("eeec") == .other)
+        #expect(pose("ccce") == .other)
+        #expect(pose("cccc") == .fist)
+        #expect(pose("eeee") == .openPalm)
+    }
+
     @Test("only the ring finger up is not one finger")
     func ringFingerAloneIsOther() {
         #expect(pose("ccec") == .other)

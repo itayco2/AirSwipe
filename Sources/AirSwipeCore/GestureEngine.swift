@@ -49,6 +49,8 @@ public final class GestureEngine {
     private var candidatePose: HandPose = .other
     private var candidateSince: TimeInterval = 0
     private var candidateY = 0.5
+    /// The last time the swipe pose was read, however briefly, for `strokePoseHold`.
+    private var lastSwipePoseTime: TimeInterval = -.infinity
     private var scrollNeutralY = 0.5
     /// Smoothed hand height while the page is following the hand.
     private var followY: Double?
@@ -191,7 +193,27 @@ public final class GestureEngine {
     /// A pose becomes the mode only after it has been steady for
     /// `poseStableDuration`. Entering scroll mode records the height it started
     /// at, which `.rate` scrolling is measured from.
+    ///
+    /// Stroke mode is stickier. A reading that is merely unclear (`.other`, `.fist`)
+    /// does not end it and cancels any switch that was pending, because with the hand
+    /// low in the frame or moving fast the pose reads that way most of the time even
+    /// though one finger is still what is shown. It ends when a clear different pose
+    /// has been steady, or when `strokePoseHold` has passed with no one-finger reading.
     private func updateMode(for sample: HandSample, at time: TimeInterval) {
+        if sample.pose == config.swipePose {
+            lastSwipePoseTime = time
+        }
+        if mode == config.swipePose, sample.pose == .other || sample.pose == .fist {
+            candidatePose = mode
+            candidateSince = time
+            candidateY = sample.y
+            if time - lastSwipePoseTime >= config.strokePoseHold {
+                mode = .other
+                candidatePose = .other
+            }
+            return
+        }
+
         if sample.pose != candidatePose {
             candidatePose = sample.pose
             candidateSince = time
