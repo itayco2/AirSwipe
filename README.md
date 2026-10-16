@@ -65,8 +65,17 @@ One-time setup:
 2. Set its **Shortcut** to **Customize…** and press **Control + Option + D**. (Any
    other chord works if you pass the same one as `--voice-key`.)
 3. Run `airswipe --live --voice` from a shell that has Accessibility permission, such
-   as the Claude app's Terminal panel or Terminal.app. Click into the message box
-   before you circle.
+   as the Claude app's Terminal panel or Terminal.app. No click is needed (see
+   below), but give it about 6 seconds after launch before the first circle.
+
+**No click needed.** A start circle first brings the Claude app forward and puts the
+cursor in its message box, then presses the key; a stop circle just presses the key.
+AirSwipe does this through the macOS accessibility API: the Claude app (built on
+Chromium) exposes its message box as a text area labelled "Prompt" once it has been
+asked to build its interface tree, and AirSwipe asks at startup. `--voice-target
+frontmost` skips all of it and presses the key into whatever is focused, which is
+what you want for a terminal. `airswipe --focus-claude` runs just the focusing step
+as a check.
 
 The key is pressed the way a real keyboard presses it (modifier keys as their own
 events, the key held about 100 ms). A bare key-down and key-up starts Dictation but
@@ -85,7 +94,7 @@ the hand.
 
 ## Status
 
-- **Gesture logic** (`AirSwipeCore`): built test-first, 151 passing tests.
+- **Gesture logic** (`AirSwipeCore`): built test-first, 152 passing tests.
 - **Camera layer** (`airswipe`): run on a real camera over several sessions, and
   the thresholds were set from those logs. Live swipes and flicks were tried and
   look good. The scroll that follows a flick, and the still-fist stop, are newer
@@ -142,6 +151,8 @@ goes to whatever is under the mouse pointer, so rest it over the page.
 | `--live` | Post real key and scroll events |
 | `--voice` | An open-palm circle starts and stops voice dictation by pressing its shortcut (default `ctrl+opt+d`) |
 | `--voice-key CHORD` | The chord to press, like `ctrl+opt+d` or `meta+k`. Implies `--voice` |
+| `--voice-target claude\|frontmost` | `claude` (default): bring the Claude app forward and focus its message box before starting dictation. `frontmost`: press the key into whatever is focused |
+| `--focus-claude` | Focus the Claude message box once and exit, to test that step alone |
 | `--history` | Swipes go back/forward inside an app (`Cmd+[` / `Cmd+]`) instead of switching screens |
 | `--invert-scroll` | Flip the scroll direction (flicks and fine scroll) |
 | `--rate-scroll` | Fine scroll by hand height (speed) instead of following the hand |
@@ -164,7 +175,7 @@ goes to whatever is under the mouse pointer, so rest it over the page.
 | Diagonal moves fire when they shouldn't, or are ignored when they should count | `swipeMaxVerticalRatio` (how far off-axis a stroke may drift, default 0.6) |
 | It never arms | Hold the palm flat and still, face the camera, add light |
 | The circle does nothing | Arm first, use an **open palm**, and draw it within 1.5 s and at least 0.10 of the picture across and down. `--debug` should show `mode=openPalm` while you draw. Tune `circleMinTurn`, `circleMinSize`, `circleWindow` |
-| The circle fires but dictation does not start or stop | The macOS Dictation shortcut must equal `--voice-key`. Click into the message box first. The app running AirSwipe needs Accessibility permission. A second circle within 1 s is ignored (`circleCooldown`) |
+| The circle fires but dictation does not start or stop | The macOS Dictation shortcut must equal `--voice-key`. Run `airswipe --focus-claude` to check the focusing step alone (it should print `focused the Claude message box`; if it cannot find the box, the app's interface may have changed, so use `--voice-target frontmost` and click the box yourself). The app running AirSwipe needs Accessibility permission. A second circle within 1 s is ignored (`circleCooldown`) |
 | A figure of eight fires once | Its first loop is a round loop, and a detector that decides as the hand moves cannot know a second loop follows |
 | One or two fingers are not recognized | `--debug`: `str=` is each finger's straightness. Extended fingers read about 0.98 to 1.00 and curled ones 0.9 or less. Curl the other fingers tighter, or tune `extendedStraightness` / `curledStraightness` in `HandPoseClassifier` |
 | It switches modes too slowly or too eagerly | `poseStableDuration` in `GestureConfig`. `strokePoseHold` (default 1 s) is how long one-finger mode survives with no one-finger reading |
@@ -208,8 +219,10 @@ Design and plan: [`docs/superpowers/specs`](docs/superpowers/specs/2026-10-15-ai
 - It sends keyboard shortcuts and scroll events, not true trackpad gestures, so a
   swipe only does something where `Ctrl+←/→` (or `Cmd+[` / `Cmd+]` with
   `--history`) would.
-- Voice dictation presses a key into whatever app is in front, so the message box has
-  to be focused when you circle. The press must come from a process with Accessibility
+- Voice dictation finds the Claude message box by its accessibility label ("Prompt"),
+  so an app update that renames it would break the automatic focus (`--voice-target
+  frontmost` is the fallback). Drawing the start circle brings the Claude window to
+  the front. The press must come from a process with Accessibility
   permission (an assistant's own sandboxed shell has none). The 🎙 mark is an
   assumption and can be wrong if dictation stops by itself; the next circle then
   starts a new session.

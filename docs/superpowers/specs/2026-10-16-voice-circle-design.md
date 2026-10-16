@@ -17,8 +17,8 @@ the same code and differ only in the key and in who transcribes:
 ## What the user does
 
 1. Run `airswipe --live --voice`. Arm as usual with a still open palm.
-2. Click into the message box. Draw a circle in the air with the **open palm**, in either
-   direction.
+2. Draw a circle in the air with the **open palm**, in either direction. (No click into
+   the message box is needed: the start circle focuses it, see decision 6.)
 3. AirSwipe presses the dictation key once. The menu bar shows 🎙. Dictation is now
    listening.
 4. Talk. Then draw another circle. AirSwipe presses the key again, dictation stops and the
@@ -49,6 +49,18 @@ the same code and differ only in the key and in who transcribes:
    Pressing Control and Option as their own key events, holding the key about 100 ms and
    then releasing everything both started and stopped it. The press therefore does that,
    on a background queue so the hold never blocks the camera thread.
+6. **The start circle focuses the Claude message box itself.** Live testing showed
+   dictation only starts when the box has the cursor, and the app has no shortcut for
+   focusing it. The Claude app (Chromium based) exposes its interface to the macOS
+   accessibility API once asked (`AXManualAccessibility`), after a few seconds; the box
+   is then a text area labelled "Prompt" (`docs/superpowers/spike-voice-key.md`). So a
+   start circle brings the app forward, sets that area focused, waits about 0.15 s and
+   presses the key; a stop circle only presses the key. AirSwipe asks the app to build
+   its tree at startup so the first circle does not wait. The mapper therefore says
+   `startVoice` or `stopVoice` (it tracks `voiceActive`, reset on arm and disarm)
+   instead of one toggle. `--voice-target frontmost` skips focusing for terminals, and
+   `--focus-claude` runs the focusing step alone as a check. If the box is not found, a
+   warning is printed and the key is pressed anyway.
 
 ## Detecting the circle
 
@@ -80,7 +92,10 @@ other gesture. All numbers are starting values, to be tuned from real-camera log
 
 ## Plumbing
 
-- `ActionMapper`: `.circle` becomes a new `Action.toggleVoice`.
+- `ActionMapper`: `.circle` becomes `Action.startVoice` or `Action.stopVoice`, alternating
+  (`voiceActive`, reset when the engine arms or disarms).
+- `ClaudePromptFocus` (executable target): finds the Claude app's "Prompt" text area
+  through the accessibility API and focuses it.
 - `KeyChord` (pure, in the core): parses `ctrl`, `opt`/`alt`/`meta`, `cmd`, `shift` plus
   one key (letter, digit, `space`, `\`, `f1`–`f20`) into a key code and modifiers.
 - `CGEventSink` (live): posts the chord as a realistic press (see decision 5).
@@ -98,7 +113,7 @@ other gesture. All numbers are starting values, to be tuned from real-camera log
 2. Set its **Shortcut** to **Customize…** and press **Control + Option + D**.
 3. Run `airswipe --live --voice` from a shell that has Accessibility permission (the
    Claude app's Terminal panel or Terminal.app; allow it under System Settings > Privacy &
-   Security > Accessibility). Click into the message box before circling.
+   Security > Accessibility). Give it about 6 seconds, then circle; no click is needed.
 
 **Claude Code in a terminal (command-line tool, untested):** run `/voice tap`, bind
 `voice:pushToTalk` to a chord in `~/.claude/keybindings.json` (for example
@@ -131,8 +146,11 @@ audio goes to Anthropic for transcription.
 
 ## Known limits
 
-- It presses a key into whatever app is focused, so the message box must be focused when
-  you circle.
+- The automatic focus relies on the Claude app labelling its message box "Prompt" in the
+  accessibility tree; an app update could change that (fall back to `--voice-target
+  frontmost` and click the box). The start circle brings the Claude window to the front,
+  and the first circle after launch should wait about 6 seconds for the app to build its
+  tree.
 - The key press must come from a process with Accessibility permission. The assistant's
   own sandboxed shell has none; the Claude app's Terminal panel and Terminal.app work.
 - The 🎙 mark is an assumption and can be wrong if dictation stops by itself; the next

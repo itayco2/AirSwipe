@@ -29,8 +29,9 @@ let usage = """
 airswipe: switch screens and scroll by moving your hand in the air.
 
 USAGE
-  airswipe [--live] [--voice] [--voice-key CHORD] [--history] [--invert-scroll]
-           [--rate-scroll] [--no-mirror] [--debug]
+  airswipe [--live] [--voice] [--voice-key CHORD] [--voice-target claude|frontmost]
+           [--history] [--invert-scroll] [--rate-scroll] [--no-mirror] [--debug]
+  airswipe --focus-claude
 
 OPTIONS
   (default)        Dry run. Prints what it would do and posts nothing.
