@@ -14,6 +14,10 @@ struct Options {
     var live = false
     var voice = false
     var voiceKey = defaultVoiceChord
+    /// Focus the Claude app's message box before starting dictation (`--voice-target claude`).
+    var focusClaude = true
+    /// `--focus-claude`: focus the message box once and exit, to test that step alone.
+    var focusOnly = false
     var history = false
     var invertScroll = false
     var rateScroll = false
@@ -35,6 +39,10 @@ OPTIONS
                    its shortcut. Set macOS Dictation's shortcut to the same chord.
   --voice-key KEY  The chord to press, like ctrl+opt+d or meta+k (default ctrl+opt+d).
                    Implies --voice.
+  --voice-target T claude (default): bring the Claude app forward and put the cursor in
+                   its message box before starting dictation, so no click is needed.
+                   frontmost: just press the key into whatever is focused.
+  --focus-claude   Focus the Claude message box once and exit (tests that step alone).
   --history        Swipes go back/forward inside an app (Cmd+[ / Cmd+]) instead of
                    switching screens.
   --invert-scroll  Flip the scroll direction.
@@ -69,6 +77,15 @@ func parseOptions(_ arguments: [String]) -> Options {
             }
             options.voice = true
             options.voiceKey = value
+        case "--voice-target":
+            switch remaining.next() {
+            case "claude"?: options.focusClaude = true
+            case "frontmost"?: options.focusClaude = false
+            default:
+                fputs("airswipe: --voice-target is claude or frontmost\n\n\(usage)\n", stderr)
+                exit(2)
+            }
+        case "--focus-claude": options.focusOnly = true
         case "--history": options.history = true
         case "--desktops": break // now the default; accepted so old commands still run
         case "--invert-scroll": options.invertScroll = true
@@ -94,6 +111,20 @@ setvbuf(stdout, nil, _IOLBF, 0)
 
 let options = parseOptions(Array(CommandLine.arguments.dropFirst()))
 
+// --focus-claude: try just the "put the cursor in the Claude message box" step, once.
+if options.focusOnly {
+    let focuser = ClaudePromptFocus()
+    guard focuser.prepare() else {
+        print("airswipe: \(ClaudePromptFocus.Outcome.appNotRunning)")
+        exit(1)
+    }
+    print("Asked the Claude app to build its interface tree; waiting 6 s for it...")
+    Thread.sleep(forTimeInterval: 6)
+    let outcome = focuser.focus()
+    print("airswipe: \(outcome)")
+    exit(outcome.isFocused ? 0 : 1)
+}
+
 var gestureConfig = GestureConfig()
 if options.rateScroll {
     gestureConfig.scrollMode = .rate
@@ -116,10 +147,17 @@ if options.live {
     }
     sink = CGEventSink(style: options.history ? .browserHistory : .desktops,
                        invertScroll: options.invertScroll,
-                       voiceChord: options.voice ? KeyChord.parse(options.voiceKey) : nil)
+                       voiceChord: options.voice ? KeyChord.parse(options.voiceKey) : nil,
+                       focusClaude: options.voice && options.focusClaude)
+    if options.voice && options.focusClaude {
+        // The Claude app takes several seconds to build its accessibility tree, so ask now
+        // and the first circle does not have to wait for it.
+        ClaudePromptFocus().prepare()
+    }
 } else {
     sink = ConsoleSink(style: options.history ? .browserHistory : .desktops,
-                       voiceKey: options.voiceKey)
+                       voiceKey: options.voiceKey,
+                       focusClaude: options.focusClaude)
 }
 
 NSApplication.shared.setActivationPolicy(.accessory)
@@ -133,8 +171,6 @@ var debugLastPrint = 0.0
 /// rejection that lasts one frame still shows up.
 var debugRejection: String?
 var armedNow = false
-/// Whether voice dictation is assumed to be running: each circle flips it.
-var recordingNow = false
 
 /// "[ 12.3s] " in debug mode, so events can be lined up with the frame lines.
 func stamp(_ time: Double) -> String {
@@ -170,6 +206,8 @@ let camera = CameraSource { pixelBuffer, time in
     }
 
     for event in events {
+        // Map first: the circle message below reads the mapper's start/stop state.
+        let actions = mapper.actions(for: event)
         switch event {
         case .armed:
             armedNow = true
@@ -177,7 +215,6 @@ let camera = CameraSource { pixelBuffer, time in
             DispatchQueue.main.async { status.setArmed(true) }
         case .disarmed:
             armedNow = false
-            recordingNow = false
             let why: String
             switch engine.lastDisarmReason {
             case .fist?: why = "fist held"
@@ -194,12 +231,11 @@ let camera = CameraSource { pixelBuffer, time in
         case .scroll:
             break
         case .circle:
-            recordingNow.toggle()
-            print("\(stamp(time))voice: \(recordingNow ? "start" : "stop") dictation (circle)")
-            let recording = recordingNow
+            let recording = mapper.voiceActive
+            print("\(stamp(time))voice: \(recording ? "start" : "stop") dictation (circle)")
             DispatchQueue.main.async { status.setRecording(recording) }
         }
-        for action in mapper.actions(for: event) {
+        for action in actions {
             sink.perform(action)
         }
     }

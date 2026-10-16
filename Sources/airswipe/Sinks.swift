@@ -19,13 +19,15 @@ extension ActionSink {
 final class ConsoleSink: ActionSink {
     private let style: CGEventSink.NavigationStyle
     private let voiceKey: String
+    private let focusClaude: Bool
     private var burstPixels: Int32 = 0
     private var scrolledThisFrame = false
     private var lastReport = Date.distantPast
 
-    init(style: CGEventSink.NavigationStyle, voiceKey: String) {
+    init(style: CGEventSink.NavigationStyle, voiceKey: String, focusClaude: Bool) {
         self.style = style
         self.voiceKey = voiceKey
+        self.focusClaude = focusClaude
     }
 
     func perform(_ action: Action) {
@@ -39,8 +41,12 @@ final class ConsoleSink: ActionSink {
         case .scroll(let pixels):
             burstPixels += pixels
             scrolledThisFrame = true
-        case .toggleVoice:
-            print("  -> would press the voice key (\(voiceKey)) to start or stop dictation")
+        case .startVoice:
+            print(focusClaude
+                  ? "  -> would focus the Claude message box, then press the voice key (\(voiceKey)) to start dictation"
+                  : "  -> would press the voice key (\(voiceKey)) to start dictation")
+        case .stopVoice:
+            print("  -> would press the voice key (\(voiceKey)) to stop dictation")
         }
     }
 
@@ -85,13 +91,17 @@ final class CGEventSink: ActionSink {
     private let style: NavigationStyle
     private let invertScroll: Bool
     private let voiceChord: KeyChord?
+    /// Brings the Claude app's message box into focus before dictation starts. Nil
+    /// presses the key into whatever is focused.
+    private let promptFocus: ClaudePromptFocus?
     /// Serial, so two quick circles can never interleave their key events.
     private let voiceQueue = DispatchQueue(label: "airswipe.voice-key")
 
-    init(style: NavigationStyle, invertScroll: Bool, voiceChord: KeyChord?) {
+    init(style: NavigationStyle, invertScroll: Bool, voiceChord: KeyChord?, focusClaude: Bool) {
         self.style = style
         self.invertScroll = invertScroll
         self.voiceChord = voiceChord
+        self.promptFocus = focusClaude ? ClaudePromptFocus() : nil
     }
 
     /// Returns whether this process may post events, and asks macOS to show the
@@ -122,7 +132,11 @@ final class CGEventSink: ActionSink {
             }
         case .scroll(let pixels):
             postScroll(invertScroll ? -pixels : pixels)
-        case .toggleVoice:
+        case .startVoice:
+            if let chord = voiceChord {
+                startVoice(chord)
+            }
+        case .stopVoice:
             if let chord = voiceChord {
                 postChord(chord)
             }
@@ -135,6 +149,25 @@ final class CGEventSink: ActionSink {
             let event = CGEvent(keyboardEventSource: source, virtualKey: code, keyDown: isDown)
             event?.flags = flags
             event?.post(tap: .cghidEventTap)
+        }
+    }
+
+    /// Starting dictation needs the cursor in a text field, so first bring the Claude
+    /// message box into focus (when asked to), then press the key. The focus step can
+    /// take a moment, so it runs on `voiceQueue`; the press is queued behind it.
+    private func startVoice(_ chord: KeyChord) {
+        guard let promptFocus else {
+            postChord(chord)
+            return
+        }
+        voiceQueue.async {
+            let outcome = promptFocus.focus()
+            if case .focused = outcome {
+                Thread.sleep(forTimeInterval: 0.15)
+            } else {
+                fputs("airswipe: \(outcome); pressing the voice key anyway\n", stderr)
+            }
+            self.postChord(chord)
         }
     }
 

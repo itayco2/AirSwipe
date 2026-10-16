@@ -8,8 +8,10 @@ public enum Action: Equatable {
     case forward
     /// Scroll by whole pixels. Positive scrolls toward the top of the page.
     case scroll(pixels: Int32)
-    /// Press the voice key once: starts dictation, or stops it if already running.
-    case toggleVoice
+    /// Start dictation: focus the message box if needed, then press the voice key.
+    case startVoice
+    /// Stop dictation: press the voice key again.
+    case stopVoice
 }
 
 /// Translates gesture events into actions.
@@ -21,6 +23,10 @@ public final class ActionMapper {
     private let maxScrollPixelsPerSecond: Double
     private var pendingPixels = 0.0
 
+    /// Whether dictation is assumed to be running. Each circle flips it, and arming or
+    /// disarming resets it: nothing can see the real state, so this is a best guess.
+    public private(set) var voiceActive = false
+
     public init(maxScrollPixelsPerSecond: Double = 1200) {
         self.maxScrollPixelsPerSecond = maxScrollPixelsPerSecond
     }
@@ -29,6 +35,7 @@ public final class ActionMapper {
         switch event {
         case .armed, .disarmed:
             pendingPixels = 0
+            voiceActive = false
             return []
 
         case .swipe(.right):
@@ -43,7 +50,8 @@ public final class ActionMapper {
             return []
 
         case .circle:
-            return [.toggleVoice]
+            voiceActive.toggle()
+            return [voiceActive ? .startVoice : .stopVoice]
 
         case .scroll(let amount):
             pendingPixels += amount * maxScrollPixelsPerSecond

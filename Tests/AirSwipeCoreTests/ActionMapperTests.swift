@@ -60,10 +60,28 @@ struct ActionMapperTests {
 
     // The scroll that moves the page comes as `.scroll` events that follow the hand;
     // the flick event only says a stroke began, so it must not scroll a second time.
-    @Test("a circle toggles voice recording")
-    func circleTogglesVoice() {
+    // Starting needs more than stopping (the message box must be focused first), so the
+    // mapper says which one it is instead of a bare toggle.
+    @Test("the first circle starts voice, the next stops it, and so on")
+    func circlesAlternate() {
         let mapper = ActionMapper()
-        #expect(mapper.actions(for: .circle) == [.toggleVoice])
+        #expect(mapper.voiceActive == false)
+        #expect(mapper.actions(for: .circle) == [.startVoice])
+        #expect(mapper.voiceActive == true)
+        #expect(mapper.actions(for: .circle) == [.stopVoice])
+        #expect(mapper.voiceActive == false)
+        #expect(mapper.actions(for: .circle) == [.startVoice])
+    }
+
+    @Test("arming or disarming forgets that voice was running")
+    func voiceResetsWithTheEngine() {
+        let mapper = ActionMapper()
+        _ = mapper.actions(for: .circle)
+        _ = mapper.actions(for: .disarmed)
+        #expect(mapper.voiceActive == false)
+        #expect(mapper.actions(for: .circle) == [.startVoice])
+        _ = mapper.actions(for: .armed)
+        #expect(mapper.voiceActive == false)
     }
 
     @Test("a flick event does nothing by itself, the scroll that follows moves the page")
