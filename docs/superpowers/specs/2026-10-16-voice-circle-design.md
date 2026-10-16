@@ -68,7 +68,18 @@ the same code and differ only in the key and in who transcribes:
    Claude's message box first only when that app already is Claude, so the screen never
    switches; `claude` keeps the old always-bring-it-forward behaviour; `frontmost` never
    touches focus. The thumbs-up Return follows the same rule. The decision is a small pure
-   function in the core (`VoiceTarget.focusesClaude`) so it is unit-tested.
+   function in the core (`VoiceTarget.focus`) so it is unit-tested.
+
+   **Browsers (same day).** Dictating by hand worked in Chrome; what was missing was the
+   click, which a hand in the air cannot make. So in `auto`, when the app in front is a
+   browser and no text box has the cursor, `WebTextFocus` finds the page's own box through
+   the accessibility tree and focuses it, as `ClaudePromptFocus` does for Claude. Chromium
+   browsers expose a page only after being asked (`AXManualAccessibility`), done at startup.
+   Which box is a pure, tested choice (`TextFieldChoice`): a box labelled "search" in the
+   page, then a search-type field, then the first usable box; the address bar and hidden
+   or disabled boxes are skipped. A box the user already clicked is left alone. The send
+   key (Return) only re-focuses the Claude box, never a web box, so it runs the search in the
+   box the words went into. `--focus-web` tests the step alone.
 
 ## Detecting the circle
 

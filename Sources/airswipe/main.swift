@@ -18,6 +18,8 @@ struct Options {
     var voiceTarget = VoiceTarget.auto
     /// `--focus-claude`: focus the message box once and exit, to test that step alone.
     var focusOnly = false
+    /// `--focus-web`: put the cursor in the browser page's text box once and exit.
+    var focusWebOnly = false
     var history = false
     var invertScroll = false
     var rateScroll = false
@@ -32,6 +34,7 @@ USAGE
   airswipe [--live] [--voice] [--voice-key CHORD] [--voice-target auto|claude|frontmost]
            [--history] [--invert-scroll] [--rate-scroll] [--no-mirror] [--debug]
   airswipe --focus-claude
+  airswipe --focus-web
 
 OPTIONS
   (default)        Dry run. Prints what it would do and posts nothing.
@@ -40,11 +43,14 @@ OPTIONS
                    its shortcut. Set macOS Dictation's shortcut to the same chord.
   --voice-key KEY  The chord to press, like ctrl+opt+d or meta+k (default ctrl+opt+d).
                    Implies --voice.
-  --voice-target T auto (default): dictate where you are, in the app in front. Only if that
-                   app is Claude is its message box focused first, so no click is needed.
+  --voice-target T auto (default): dictate where you are, in the app in front. A hand cannot
+                   click, so the cursor is put in the right box first: Claude's message box,
+                   or a web page's search box (unless you already clicked a box).
                    claude: always bring the Claude app forward and focus its message box.
                    frontmost: just press the key into whatever is focused.
   --focus-claude   Focus the Claude message box once and exit (tests that step alone).
+  --focus-web      Put the cursor in the browser page's search box once and exit: run it,
+                   then switch to your browser within 5 seconds (tests that step alone).
   --history        Swipes go back/forward inside an app (Cmd+[ / Cmd+]) instead of
                    switching screens.
   --invert-scroll  Flip the scroll direction.
@@ -87,6 +93,7 @@ func parseOptions(_ arguments: [String]) -> Options {
             }
             options.voiceTarget = target
         case "--focus-claude": options.focusOnly = true
+        case "--focus-web": options.focusWebOnly = true
         case "--history": options.history = true
         case "--desktops": break // now the default; accepted so old commands still run
         case "--invert-scroll": options.invertScroll = true
@@ -135,6 +142,33 @@ if options.focusOnly {
     exit(outcome.isFocused ? 0 : 1)
 }
 
+// --focus-web: try just the "put the cursor in the page's text box" step, once. The browser
+// has to be in front when it runs, so there is a few seconds to switch to it.
+if options.focusWebOnly {
+    print("Switch to your browser with a web page open (Google, YouTube...). Checking in 5 seconds...")
+    // Let the run loop turn, so the system reports which app is in front.
+    RunLoop.current.run(until: Date().addingTimeInterval(5))
+    guard let app = NSWorkspace.shared.frontmostApplication,
+          let id = app.bundleIdentifier,
+          WebTextFocus.browserBundleIdentifiers.contains(id) else {
+        let name = NSWorkspace.shared.frontmostApplication?.localizedName ?? "unknown"
+        print("airswipe: the app in front is \(name), not a web browser")
+        exit(1)
+    }
+    let focuser = WebTextFocus()
+    focuser.prepare()
+    print("Asked \(app.localizedName ?? id) to expose its pages to accessibility; waiting 3 s...")
+    RunLoop.current.run(until: Date().addingTimeInterval(3))
+    func timed() -> (WebTextFocus.Outcome, Int) {
+        let started = Date()
+        let outcome = focuser.focus(app: app)
+        return (outcome, Int(Date().timeIntervalSince(started) * 1000))
+    }
+    let (outcome, firstMs) = timed()
+    print("airswipe: \(outcome) (took \(firstMs) ms)")
+    exit(outcome.isInTextBox ? 0 : 1)
+}
+
 var gestureConfig = GestureConfig()
 if options.rateScroll {
     gestureConfig.scrollMode = .rate
@@ -164,6 +198,11 @@ if options.live {
         // The Claude app takes several seconds to build its accessibility tree, so ask now
         // and the first circle does not have to wait for it.
         ClaudePromptFocus().prepare()
+    }
+    if options.voice && options.voiceTarget == .auto {
+        // Browsers expose a page to accessibility only after being asked, and the tree
+        // takes a moment to build, so ask now and the first circle does not wait.
+        WebTextFocus().prepare()
     }
 } else {
     sink = ConsoleSink(style: options.history ? .browserHistory : .desktops,

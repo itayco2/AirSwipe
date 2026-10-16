@@ -34,7 +34,7 @@ final class ConsoleSink: ActionSink {
     private var whereKeysGo: String {
         switch voiceTarget {
         case .auto:
-            return "in the app in front (focusing the Claude message box first only if that app is Claude)"
+            return "in the app in front (first putting the cursor in the Claude message box if that is Claude, or in the page's search box if it is a browser and no box is focused)"
         case .claude:
             return "after bringing the Claude app forward and focusing its message box"
         case .frontmost:
@@ -103,10 +103,11 @@ final class CGEventSink: ActionSink {
     private let style: NavigationStyle
     private let invertScroll: Bool
     private let voiceChord: KeyChord?
-    /// Where the keys go: see `VoiceTarget`. Whether the Claude message box is focused first
-    /// is decided each time, from the app in front.
+    /// Where the keys go: see `VoiceTarget`. What gets the cursor first (the Claude message
+    /// box, a web page's text box, or nothing) is decided each time, from the app in front.
     private let voiceTarget: VoiceTarget
     private let promptFocus = ClaudePromptFocus()
+    private let webFocus = WebTextFocus()
     /// Serial, so two quick circles can never interleave their key events.
     private let voiceQueue = DispatchQueue(label: "airswipe.voice-key")
     /// When dictation was last told to stop. Only touched on `voiceQueue`.
@@ -119,13 +120,16 @@ final class CGEventSink: ActionSink {
         self.voiceTarget = voiceTarget
     }
 
-    /// Whether the Claude message box should be focused before a key is pressed. Always for
-    /// `claude`; for `auto` only when the app in front already is Claude, so a circle drawn on
-    /// a YouTube page dictates into that page instead of switching the screen to Claude.
-    private func shouldFocusClaude() -> Bool {
-        voiceTarget.focusesClaude(
-            frontmostBundleID: NSWorkspace.shared.frontmostApplication?.bundleIdentifier,
-            claudeBundleID: ClaudePromptFocus.bundleIdentifier)
+    /// What should get the cursor before a key is pressed, and the app in front. For `auto`
+    /// it follows the app in front, so a circle drawn on a YouTube page dictates into that
+    /// page (its search box gets the cursor, since a hand cannot click) instead of switching
+    /// the screen to Claude.
+    private func focusPlan() -> (plan: VoiceFocus, app: NSRunningApplication?) {
+        let app = NSWorkspace.shared.frontmostApplication
+        let plan = voiceTarget.focus(frontmostBundleID: app?.bundleIdentifier,
+                                     claudeBundleID: ClaudePromptFocus.bundleIdentifier,
+                                     browserBundleIDs: WebTextFocus.browserBundleIdentifiers)
+        return (plan, app)
     }
 
     /// Returns whether this process may post events, and asks macOS to show the
@@ -190,7 +194,9 @@ final class CGEventSink: ActionSink {
             if sinceStop < dictationSettle {
                 Thread.sleep(forTimeInterval: dictationSettle - sinceStop)
             }
-            if self.shouldFocusClaude() {
+            // Only the Claude box is focused again here. In a browser the dictation went into
+            // the box that already has the cursor, and Return is meant for that same box.
+            if self.focusPlan().plan == .claudeMessageBox {
                 let outcome = self.promptFocus.focus()
                 if outcome.isFocused {
                     Thread.sleep(forTimeInterval: 0.06)
@@ -208,12 +214,25 @@ final class CGEventSink: ActionSink {
     /// `voiceQueue`; the press is queued behind it.
     private func startVoice(_ chord: KeyChord) {
         voiceQueue.async {
-            if self.shouldFocusClaude() {
+            let (plan, app) = self.focusPlan()
+            switch plan {
+            case .none:
+                break
+            case .claudeMessageBox:
                 let outcome = self.promptFocus.focus()
                 if case .focused = outcome {
                     Thread.sleep(forTimeInterval: 0.06)
                 } else {
                     fputs("airswipe: \(outcome); pressing the voice key anyway\n", stderr)
+                }
+            case .webTextField:
+                if let app {
+                    let outcome = self.webFocus.focus(app: app)
+                    if outcome.isInTextBox {
+                        Thread.sleep(forTimeInterval: 0.06)
+                    } else {
+                        fputs("airswipe: \(outcome); pressing the voice key anyway\n", stderr)
+                    }
                 }
             }
             self.postChord(chord)

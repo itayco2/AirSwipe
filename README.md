@@ -29,7 +29,7 @@ The interesting part of this project is deciding what a hand is *doing* from a n
 
 - **A pure state machine.** `GestureEngine` takes timestamped hand samples and returns
   events. It never reads a clock or touches the camera, so false positives, the hard
-  part of gesture control, are tested with synthetic hand paths (178 tests,
+  part of gesture control, are tested with synthetic hand paths (189 tests,
   Swift Testing) and by replaying recorded camera logs.
 - **Poses from finger straightness.** A finger is extended or curled by how straight
   its own joints are, which needs no wrist (out of view when a hand rests above a
@@ -103,9 +103,18 @@ dictation, the thumbs up stops it, waits for the text to land, and presses Retur
 second circle instead of the thumbs up stops dictation without sending.
 
 **It dictates where you are.** By default (`--voice-target auto`) the keys go to the app
-in front, so on a YouTube page you click the search box, circle, talk, and give a thumbs
-up to search. The screen never switches. Only when the app in front is the Claude app does
-AirSwipe put the cursor in its message box first, so no click is needed there.
+in front and the screen never switches. Dictation only types into the box that has the
+cursor, and a hand in the air cannot click, so AirSwipe puts the cursor there first:
+- In the **Claude app**, in its message box.
+- In a **browser** (Chrome, Safari, Arc, Edge, Brave, Firefox), in the page's search box,
+  found through the accessibility API: Google, YouTube and most sites work. Circle, talk,
+  and the thumbs up presses Return, which runs the search. If you already clicked a box
+  (a comment field, say), it is left alone and your words go there.
+- In any **other app**, nowhere: put the cursor in a box yourself.
+
+The first circle in a browser can take a second while the browser exposes the page.
+Chromium browsers only do that when asked, which AirSwipe does at startup, so start AirSwipe
+after the browser is open. `airswipe --focus-web` tests this step alone.
 `--voice-target claude` always brings the Claude app forward and focuses its message box,
 from any app (the screen switches to Claude if it lives on another desktop);
 `--voice-target frontmost` never touches focus, not even inside Claude. `airswipe
@@ -119,7 +128,8 @@ from any app (the screen switches to Claude if it lives on another desktop);
 | `--live` | Post real key and scroll events |
 | `--voice` | Palm circle starts/stops dictation, thumbs up sends |
 | `--voice-key CHORD` | The chord to press, like `ctrl+opt+d` or `meta+k`. Implies `--voice` |
-| `--voice-target auto\|claude\|frontmost` | `auto` (default): dictate in the app in front, focusing the Claude message box first only if that app is Claude. `claude`: always bring Claude forward and focus its message box. `frontmost`: press the key into whatever is focused |
+| `--voice-target auto\|claude\|frontmost` | `auto` (default): dictate in the app in front, first putting the cursor in the Claude message box (if that is Claude) or the page's search box (if it is a browser). `claude`: always bring Claude forward and focus its message box. `frontmost`: press the key into whatever is focused |
+| `--focus-web` | Put the cursor in the browser page's search box once and exit: run it, then switch to your browser within 5 s (tests that step alone) |
 | `--focus-claude` | Focus the Claude message box once and exit, to test that step alone |
 | `--history` | Swipes go back/forward inside an app (`Cmd+[` / `Cmd+]`) instead of switching screens |
 | `--invert-scroll` | Flip the scroll direction (pinch and fine scroll) |
@@ -148,6 +158,7 @@ Every threshold is a field of `GestureConfig` in `Sources/AirSwipeCore/Types.swi
 | The circle does nothing | Arm first, use an open palm, draw one loop that closes within 2 s and spans at least 0.10 of the picture. Tune `circleMinTurn`, `circleMinSize`, `circleWindow` |
 | The circle switches the whole screen to the Claude app | That was the old behaviour (`--voice-target claude`): the start circle brought Claude forward. The default is now `auto`, which dictates in the app in front. If you still see it, check you did not pass `--voice-target claude` |
 | The circle also swipes to another screen | A swipe is made with one finger, so none fires within 0.4 s of an open palm (`swipePalmGuard`), a flat palm takes over from one-finger mode at once, and one-finger mode only starts once your hand is held still (`poseStableRadius`, 0.04). Show a flat open palm before you circle. With `--debug`, `mode=openPalm` should appear within a fraction of a second, and a refused swipe ends the line with `REJECTED … an open palm was showing` |
+| Dictation does nothing on a web page | A box needs the cursor and a hand cannot click. Run `airswipe --focus-web` with the page in front: it says which box it found, or why not (`has not exposed the page to accessibility yet` means wait a few seconds, or start AirSwipe after the browser is open). Or click a box yourself first. Typing by hand with Control+Option+D must work in that box, or it is not AirSwipe |
 | The circle fires but dictation does not start or stop | The macOS Dictation shortcut must equal `--voice-key`, and the app running AirSwipe needs Accessibility permission. Try `airswipe --focus-claude` |
 | The thumbs up does not send, or a fist sends | `--debug`: `thumb=a/b` is the thumb's straightness and how far up it points. A thumbs up needs `a` ≥ 0.95, `b` ≥ 0.80 and the four fingers curled tightly (their average `str=` ≤ 0.50): squeeze the fingers. Hold it 0.7 s |
 
@@ -167,7 +178,7 @@ Sources/AirSwipeCore/    pure logic, no camera or AppKit, fully unit-tested
   ActionMapper, KeyChord events to actions; key chord parsing
 Sources/airswipe/        camera, Vision, CGEvent, menu bar, accessibility
   CameraSource, HandTracker, Sinks, StatusItem, ClaudePromptFocus, main
-Tests/AirSwipeCoreTests  178 tests
+Tests/AirSwipeCoreTests  189 tests
 docs/superpowers/        design specs, plans and the key-press spike
 ```
 
