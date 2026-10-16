@@ -1139,6 +1139,49 @@ struct CircleEngineTests {
         let events = rig.hold(for: 0.8, pose: .fist)
         #expect(events.contains(.disarmed))
     }
+
+    // Field evidence (final live test, 2026-10-16): a palm circle also switched screens.
+    // Real loops are big (about 0.35 wide), so their first quarter looks like a swipe. In
+    // palm mode that is ignored, but when the camera read the hand as one finger for just
+    // 0.15 s mid-circle the mode flipped to one finger and the swipe fired. A pose shown
+    // while the hand is moving must not become the mode.
+    @Test("a pose shown while the hand is moving does not become the mode")
+    func movingPoseDoesNotSwitchMode() {
+        var rig = Rig.armed(config: voiceConfig())
+        rig.pose = .oneFinger
+        let events = rig.move(toX: 0.80, toY: 0.5, over: 0.6)
+        #expect(swipes(in: events).isEmpty)
+    }
+
+    @Test("a real palm circle that the camera reads as one finger does not switch screens")
+    func recordedCircleReadAsOneFinger() {
+        // Recorded start circle, 10 samples a second (see CircleDetectorTests).
+        let loop: [(t: Double, x: Double, y: Double)] = [
+            (14.0, 0.65, 0.27), (14.2, 0.59, 0.21), (14.3, 0.45, 0.26), (14.4, 0.41, 0.25),
+            (14.5, 0.37, 0.29), (14.6, 0.36, 0.42), (14.8, 0.40, 0.53), (14.9, 0.45, 0.60),
+            (15.0, 0.54, 0.62), (15.1, 0.61, 0.59), (15.3, 0.68, 0.50), (15.4, 0.72, 0.40),
+            (15.5, 0.70, 0.30), (15.6, 0.65, 0.26), (15.7, 0.59, 0.23), (15.9, 0.54, 0.28),
+            (16.0, 0.53, 0.32),
+        ]
+        var rig = Rig.armed(config: voiceConfig())
+        let start = rig.time + 0.1
+        var events: [GestureEvent] = []
+        for (index, point) in loop.enumerated() {
+            // A palm to begin with, then the reading drops to one finger and stays there.
+            let pose: HandPose = index < 2 ? .openPalm : .oneFinger
+            events += rig.engine.process(HandSample(x: point.x, y: point.y, pose: pose),
+                                         at: start + (point.t - loop[0].t))
+        }
+        #expect(swipes(in: events).isEmpty)
+    }
+
+    @Test("showing one finger and holding it still still switches to swiping")
+    func stillPoseStillSwitchesMode() {
+        var rig = Rig.armed(config: voiceConfig())
+        rig.show(.oneFinger)
+        let events = rig.move(toX: 0.80, toY: 0.5, over: 0.2)
+        #expect(swipes(in: events) == [.swipe(.right)])
+    }
 }
 
 // MARK: - Send (thumbs up)

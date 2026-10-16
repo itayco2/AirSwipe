@@ -187,6 +187,18 @@ Added after the circle worked end to end, to close the loop: circle, talk, send.
 - **Risk:** an accidental send submits whatever is in the box. A misread fist as a thumbs
   up is the way that could happen, hence the strict straight-and-up test.
 
+## Circle versus swipe (found in the final live test, 2026-10-16)
+
+A palm circle also switched screens. Real recorded loops are large (about 0.35 wide), so
+the first quarter of one looks like a swipe left or right, and a half circle looks like a
+perfectly level one (its leftmost and rightmost points are at the same height). In palm mode
+swipes are ignored, but when the camera read the palm as one finger for just 0.15 s
+mid-circle the mode flipped to one finger and the swipe fired. The fix is in the mode
+change, not the swipe: a new pose only becomes the mode if the hand stays within
+`poseStableRadius` (0.04) while it is shown for `poseStableDuration` (0.15 s). A pose shown
+on purpose is shown still; a misread moving hand is not. The cost is that after a swipe (one-finger
+mode) a palm circle needs a still palm first. A recorded loop is now a regression test.
+
 ## Known limits
 
 - The automatic focus relies on the Claude app labelling its message box "Prompt" in the

@@ -93,6 +93,10 @@ public struct GestureConfig: Equatable {
     /// A pose must be seen continuously this long before it changes the mode, so
     /// a flicker between poses cannot switch what a movement means.
     public var poseStableDuration: Double = 0.15
+    /// And the hand must stay within this distance while it shows the new pose. A pose
+    /// shown on purpose is shown still; a camera misreading a moving hand (a palm circle
+    /// read as one finger for a moment) is not, and must not switch what a movement means.
+    public var poseStableRadius: Double = 0.04
     /// The pose in which horizontal movement swipes.
     public var swipePose: HandPose = .oneFinger
     /// The pose in which hand height scrolls.

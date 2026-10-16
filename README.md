@@ -29,7 +29,7 @@ The interesting part of this project is deciding what a hand is *doing* from a n
 
 - **A pure state machine.** `GestureEngine` takes timestamped hand samples and returns
   events. It never reads a clock or touches the camera, so false positives, the hard
-  part of gesture control, are tested with synthetic hand paths (168 tests,
+  part of gesture control, are tested with synthetic hand paths (171 tests,
   Swift Testing) and by replaying recorded camera logs.
 - **Poses from finger straightness.** A finger is extended or curled by how straight
   its own joints are, which needs no wrist (out of view when a hand rests above a
@@ -138,6 +138,7 @@ Every threshold is a field of `GestureConfig` in `Sources/AirSwipeCore/Types.swi
 | A swipe is ignored right after another | The return guard waits for your hand to come back to where the swipe started; rest about 1.5 s, or tune `swipeReturnGuard` / `swipeHomeRadius` |
 | One or two fingers are not recognized | `--debug`: `str=` is each finger's straightness (extended ≈ 0.98 to 1.00, curled ≤ 0.9). Curl the others tighter, or tune `extendedStraightness` / `curledStraightness` |
 | The circle does nothing | Arm first, use an open palm, draw one loop that closes within 2 s and spans at least 0.10 of the picture. Tune `circleMinTurn`, `circleMinSize`, `circleWindow` |
+| The circle also switches screens | The camera read your hand as one finger while it moved. A new pose now only counts when the hand is held still while showing it (`poseStableRadius`, 0.04), so hold a flat open palm still for a beat, then draw the circle. After a swipe, do the same before circling, because the engine is still in one-finger mode |
 | The circle fires but dictation does not start or stop | The macOS Dictation shortcut must equal `--voice-key`, and the app running AirSwipe needs Accessibility permission. Try `airswipe --focus-claude` |
 | The thumbs up does not send, or a fist sends | `--debug`: `thumb=a/b` is the thumb's straightness and how far up it points. A thumbs up needs `a` ≥ 0.95, `b` ≥ 0.80 and the four fingers curled tightly (their average `str=` ≤ 0.50): squeeze the fingers. Hold it 0.7 s |
 
@@ -157,7 +158,7 @@ Sources/AirSwipeCore/    pure logic, no camera or AppKit, fully unit-tested
   ActionMapper, KeyChord events to actions; key chord parsing
 Sources/airswipe/        camera, Vision, CGEvent, menu bar, accessibility
   CameraSource, HandTracker, Sinks, StatusItem, ClaudePromptFocus, main
-Tests/AirSwipeCoreTests  168 tests
+Tests/AirSwipeCoreTests  171 tests
 docs/superpowers/        design specs, plans and the key-press spike
 ```
 

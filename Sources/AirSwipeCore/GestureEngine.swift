@@ -39,6 +39,7 @@ public final class GestureEngine {
     private var mode: HandPose = .other
     private var candidatePose: HandPose = .other
     private var candidateSince: TimeInterval = 0
+    private var candidateX = 0.5
     private var candidateY = 0.5
     /// The last time the swipe pose was read, however briefly, for `strokePoseHold`.
     private var lastSwipePoseTime: TimeInterval = -.infinity
@@ -138,6 +139,7 @@ public final class GestureEngine {
                 lastPalmPoseTime = time
                 candidatePose = .openPalm
                 candidateSince = time
+                candidateX = sample.x
                 candidateY = sample.y
                 resetTracking()
                 return [.armed]
@@ -285,6 +287,7 @@ public final class GestureEngine {
         if isUnclear, mode == config.swipePose || mode == .openPalm {
             candidatePose = mode
             candidateSince = time
+            candidateX = sample.x
             candidateY = sample.y
             let lastClear = mode == .openPalm ? lastPalmPoseTime : lastSwipePoseTime
             if time - lastClear >= config.strokePoseHold {
@@ -297,6 +300,14 @@ public final class GestureEngine {
         if sample.pose != candidatePose {
             candidatePose = sample.pose
             candidateSince = time
+            candidateX = sample.x
+            candidateY = sample.y
+        } else if mode != candidatePose,
+                  hypot(sample.x - candidateX, sample.y - candidateY) > config.poseStableRadius {
+            // The hand moved while this pose was showing: a moving hand is not a pose
+            // change on purpose. Start counting again from where it is now.
+            candidateSince = time
+            candidateX = sample.x
             candidateY = sample.y
         }
         if mode != candidatePose, time - candidateSince >= config.poseStableDuration {
