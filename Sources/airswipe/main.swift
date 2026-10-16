@@ -4,8 +4,16 @@ import Foundation
 
 // MARK: - Options
 
+/// The key AirSwipe presses to start and stop dictation. The user sets macOS Dictation's
+/// shortcut (System Settings > Keyboard > Dictation > Shortcut > Customize...) to the
+/// same chord. For Claude Code's command-line `/voice tap`, pass `--voice-key meta+k`
+/// and bind `voice:pushToTalk` to it instead.
+let defaultVoiceChord = "ctrl+opt+d"
+
 struct Options {
     var live = false
+    var voice = false
+    var voiceKey = defaultVoiceChord
     var history = false
     var invertScroll = false
     var rateScroll = false
@@ -17,11 +25,16 @@ let usage = """
 airswipe: switch screens and scroll by moving your hand in the air.
 
 USAGE
-  airswipe [--live] [--history] [--invert-scroll] [--rate-scroll] [--no-mirror] [--debug]
+  airswipe [--live] [--voice] [--voice-key CHORD] [--history] [--invert-scroll]
+           [--rate-scroll] [--no-mirror] [--debug]
 
 OPTIONS
   (default)        Dry run. Prints what it would do and posts nothing.
   --live           Post real key and scroll events (needs Accessibility permission).
+  --voice          An open-palm circle starts and stops voice dictation by pressing
+                   its shortcut. Set macOS Dictation's shortcut to the same chord.
+  --voice-key KEY  The chord to press, like ctrl+opt+d or meta+k (default ctrl+opt+d).
+                   Implies --voice.
   --history        Swipes go back/forward inside an app (Cmd+[ / Cmd+]) instead of
                    switching screens.
   --invert-scroll  Flip the scroll direction.
@@ -39,13 +52,23 @@ GESTURES (the number of fingers is the command)
                                             farther you flick the more it scrolls
   Two fingers, move your hand up / down     fine scroll: the page follows your hand
   Fist, held still for half a second        STOP
+  Open palm, draw a circle                  start / stop voice dictation (needs --voice)
 """
 
 func parseOptions(_ arguments: [String]) -> Options {
     var options = Options()
-    for argument in arguments {
+    var remaining = arguments.makeIterator()
+    while let argument = remaining.next() {
         switch argument {
         case "--live": options.live = true
+        case "--voice": options.voice = true
+        case "--voice-key":
+            guard let value = remaining.next(), KeyChord.parse(value) != nil else {
+                fputs("airswipe: --voice-key needs a chord such as ctrl+opt+d or meta+k\n\n\(usage)\n", stderr)
+                exit(2)
+            }
+            options.voice = true
+            options.voiceKey = value
         case "--history": options.history = true
         case "--desktops": break // now the default; accepted so old commands still run
         case "--invert-scroll": options.invertScroll = true
@@ -75,6 +98,7 @@ var gestureConfig = GestureConfig()
 if options.rateScroll {
     gestureConfig.scrollMode = .rate
 }
+gestureConfig.circleEnabled = options.voice
 
 let engine = GestureEngine(config: gestureConfig)
 let mapper = ActionMapper()
@@ -91,9 +115,11 @@ if options.live {
             """, stderr)
     }
     sink = CGEventSink(style: options.history ? .browserHistory : .desktops,
-                       invertScroll: options.invertScroll)
+                       invertScroll: options.invertScroll,
+                       voiceChord: options.voice ? KeyChord.parse(options.voiceKey) : nil)
 } else {
-    sink = ConsoleSink(style: options.history ? .browserHistory : .desktops)
+    sink = ConsoleSink(style: options.history ? .browserHistory : .desktops,
+                       voiceKey: options.voiceKey)
 }
 
 NSApplication.shared.setActivationPolicy(.accessory)
@@ -107,6 +133,8 @@ var debugLastPrint = 0.0
 /// rejection that lasts one frame still shows up.
 var debugRejection: String?
 var armedNow = false
+/// Whether voice dictation is assumed to be running: each circle flips it.
+var recordingNow = false
 
 /// "[ 12.3s] " in debug mode, so events can be lined up with the frame lines.
 func stamp(_ time: Double) -> String {
@@ -149,6 +177,7 @@ let camera = CameraSource { pixelBuffer, time in
             DispatchQueue.main.async { status.setArmed(true) }
         case .disarmed:
             armedNow = false
+            recordingNow = false
             let why: String
             switch engine.lastDisarmReason {
             case .fist?: why = "fist held"
@@ -165,7 +194,10 @@ let camera = CameraSource { pixelBuffer, time in
         case .scroll:
             break
         case .circle:
-            break
+            recordingNow.toggle()
+            print("\(stamp(time))voice: \(recordingNow ? "start" : "stop") dictation (circle)")
+            let recording = recordingNow
+            DispatchQueue.main.async { status.setRecording(recording) }
         }
         for action in mapper.actions(for: event) {
             sink.perform(action)

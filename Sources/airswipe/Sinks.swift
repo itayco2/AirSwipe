@@ -18,12 +18,14 @@ extension ActionSink {
 /// Dry run: says what would happen and touches nothing.
 final class ConsoleSink: ActionSink {
     private let style: CGEventSink.NavigationStyle
+    private let voiceKey: String
     private var burstPixels: Int32 = 0
     private var scrolledThisFrame = false
     private var lastReport = Date.distantPast
 
-    init(style: CGEventSink.NavigationStyle) {
+    init(style: CGEventSink.NavigationStyle, voiceKey: String) {
         self.style = style
+        self.voiceKey = voiceKey
     }
 
     func perform(_ action: Action) {
@@ -38,7 +40,7 @@ final class ConsoleSink: ActionSink {
             burstPixels += pixels
             scrolledThisFrame = true
         case .toggleVoice:
-            break
+            print("  -> would press the voice key (\(voiceKey)) to start or stop dictation")
         }
     }
 
@@ -82,10 +84,14 @@ final class CGEventSink: ActionSink {
 
     private let style: NavigationStyle
     private let invertScroll: Bool
+    private let voiceChord: KeyChord?
+    /// Serial, so two quick circles can never interleave their key events.
+    private let voiceQueue = DispatchQueue(label: "airswipe.voice-key")
 
-    init(style: NavigationStyle, invertScroll: Bool) {
+    init(style: NavigationStyle, invertScroll: Bool, voiceChord: KeyChord?) {
         self.style = style
         self.invertScroll = invertScroll
+        self.voiceChord = voiceChord
     }
 
     /// Returns whether this process may post events, and asks macOS to show the
@@ -117,7 +123,9 @@ final class CGEventSink: ActionSink {
         case .scroll(let pixels):
             postScroll(invertScroll ? -pixels : pixels)
         case .toggleVoice:
-            break
+            if let chord = voiceChord {
+                postChord(chord)
+            }
         }
     }
 
@@ -130,9 +138,63 @@ final class CGEventSink: ActionSink {
         }
     }
 
+    /// Presses a chord the way a real keyboard does: each modifier as its own
+    /// flagsChanged event, the key held about 100 ms, then everything released. The
+    /// spike showed that a bare key-down and key-up starts macOS Dictation but cannot
+    /// stop it (docs/superpowers/spike-voice-key.md). The sleeps run on `voiceQueue`,
+    /// never on the camera thread.
+    private func postChord(_ chord: KeyChord) {
+        voiceQueue.async {
+            let source = CGEventSource(stateID: .hidSystemState)
+            let modifiers: [(isOn: Bool, flag: CGEventFlags, key: CGKeyCode)] = [
+                (chord.control, .maskControl, 0x3B),
+                (chord.option, .maskAlternate, 0x3A),
+                (chord.shift, .maskShift, 0x38),
+                (chord.command, .maskCommand, 0x37),
+            ]
+            var held: CGEventFlags = []
+
+            func postModifier(_ key: CGKeyCode) {
+                let event = CGEvent(keyboardEventSource: source, virtualKey: key, keyDown: true)
+                event?.type = .flagsChanged
+                event?.flags = held
+                event?.post(tap: .cghidEventTap)
+                Thread.sleep(forTimeInterval: 0.02)
+            }
+
+            for modifier in modifiers where modifier.isOn {
+                held.insert(modifier.flag)
+                postModifier(modifier.key)
+            }
+            let keyCode = CGKeyCode(chord.keyCode)
+            let down = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: true)
+            down?.flags = chord.flags
+            down?.post(tap: .cghidEventTap)
+            Thread.sleep(forTimeInterval: 0.1)
+            let up = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: false)
+            up?.flags = chord.flags
+            up?.post(tap: .cghidEventTap)
+            for modifier in modifiers.reversed() where modifier.isOn {
+                held.remove(modifier.flag)
+                postModifier(modifier.key)
+            }
+        }
+    }
+
     private func postScroll(_ pixels: Int32) {
         let event = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 1,
                             wheel1: pixels, wheel2: 0, wheel3: 0)
         event?.post(tap: .cghidEventTap)
+    }
+}
+
+private extension KeyChord {
+    var flags: CGEventFlags {
+        var flags: CGEventFlags = []
+        if control { flags.insert(.maskControl) }
+        if option { flags.insert(.maskAlternate) }
+        if command { flags.insert(.maskCommand) }
+        if shift { flags.insert(.maskShift) }
+        return flags
     }
 }
