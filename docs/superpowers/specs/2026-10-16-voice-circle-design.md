@@ -1,6 +1,6 @@
 # AirSwipe — Voice Circle Design Spec
 
-**Date:** 2026-10-16 · **Status:** implemented and verified live on 2026-10-16 (start circle focuses the Claude message box and starts dictation; stop circle stops it and the text appears; no click needed). Spike: `docs/superpowers/spike-voice-key.md`
+**Date:** 2026-10-16 · **Status:** implemented and verified live on 2026-10-16 (start circle focuses the Claude message box and starts dictation; stop circle stops it and the text appears; no click needed). Send (thumbs up) also verified live the same day, with both a second circle before it and a thumbs up straight out of dictation: the full text was in the message when it sent. Spike: `docs/superpowers/spike-voice-key.md`
 
 ## Goal
 
