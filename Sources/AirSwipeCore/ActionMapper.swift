@@ -8,6 +8,8 @@ public enum Action: Equatable {
     case forward
     /// Scroll by whole pixels. Positive scrolls toward the top of the page.
     case scroll(pixels: Int32)
+    /// Press the voice key once: starts dictation, or stops it if already running.
+    case toggleVoice
 }
 
 /// Translates gesture events into actions.
@@ -39,6 +41,9 @@ public final class ActionMapper {
             // Only says a flick began. The page is moved by the `.scroll` events that
             // follow the hand, so this must not scroll a second time.
             return []
+
+        case .circle:
+            return [.toggleVoice]
 
         case .scroll(let amount):
             pendingPixels += amount * maxScrollPixelsPerSecond

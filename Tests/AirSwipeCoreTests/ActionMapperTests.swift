@@ -60,6 +60,12 @@ struct ActionMapperTests {
 
     // The scroll that moves the page comes as `.scroll` events that follow the hand;
     // the flick event only says a stroke began, so it must not scroll a second time.
+    @Test("a circle toggles voice recording")
+    func circleTogglesVoice() {
+        let mapper = ActionMapper()
+        #expect(mapper.actions(for: .circle) == [.toggleVoice])
+    }
+
     @Test("a flick event does nothing by itself, the scroll that follows moves the page")
     func flickEventIsOnlyAMarker() {
         let mapper = ActionMapper()

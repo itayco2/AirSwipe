@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 import AirSwipeCore
 
@@ -1116,5 +1117,118 @@ struct FlickScrollTests {
         var rig = Rig.swiping(config: config)
         let events = rig.move(toX: 0.5, toY: 0.62, over: 0.20)
         #expect(abs(total(events) - 0.12 * 4.0) < 0.002)
+    }
+}
+
+// MARK: - Circle
+
+extension Rig {
+    /// Draws a circle that is round in the picture, starting at the current position
+    /// (the circle's rightmost point). Counter-clockwise unless `clockwise`.
+    @discardableResult
+    mutating func drawCircle(radius: Double, seconds: Double, turns: Double = 1.0,
+                             clockwise: Bool = false, pose override: HandPose? = nil) -> [GestureEvent] {
+        let steps = max(1, Int((seconds * fps).rounded()))
+        let centerX = x - radius
+        let centerY = y
+        let sign = clockwise ? -1.0 : 1.0
+        var events: [GestureEvent] = []
+        for step in 1...steps {
+            let angle = sign * turns * 2 * .pi * Double(step) / Double(steps)
+            events += move(toX: centerX + radius * cos(angle),
+                           toY: centerY + radius * sin(angle) / 0.75,
+                           over: seconds / Double(steps), pose: override)
+        }
+        return events
+    }
+}
+
+@Suite("Circle")
+struct CircleEngineTests {
+    private func voiceConfig() -> GestureConfig {
+        var config = GestureConfig()
+        config.circleEnabled = true
+        return config
+    }
+
+    @Test("an open-palm circle is a circle, and nothing else")
+    func palmCircle() {
+        var rig = Rig.armed(config: voiceConfig())
+        let events = rig.drawCircle(radius: 0.10, seconds: 1.0)
+        #expect(events == [.circle])
+    }
+
+    @Test("a clockwise palm circle counts too")
+    func palmCircleClockwise() {
+        var rig = Rig.armed(config: voiceConfig())
+        let events = rig.drawCircle(radius: 0.10, seconds: 1.0, clockwise: true)
+        #expect(events == [.circle])
+    }
+
+    @Test("a second circle straight away is ignored, one after the cooldown counts")
+    func cooldown() {
+        var rig = Rig.armed(config: voiceConfig())
+        var events = rig.drawCircle(radius: 0.10, seconds: 1.0)
+        events += rig.drawCircle(radius: 0.10, seconds: 0.3, turns: 0.3)
+        rig.hold(for: 2.0)
+        events += rig.drawCircle(radius: 0.10, seconds: 1.0)
+        #expect(events == [.circle, .circle])
+    }
+
+    @Test("with voice off, a palm circle does nothing")
+    func offByDefault() {
+        var rig = Rig.armed()
+        #expect(rig.drawCircle(radius: 0.10, seconds: 1.0).isEmpty)
+    }
+
+    @Test("a circle while not armed does nothing")
+    func notArmed() {
+        var rig = Rig(config: voiceConfig())
+        #expect(rig.drawCircle(radius: 0.10, seconds: 1.0).isEmpty)
+    }
+
+    @Test("a half circle does nothing")
+    func halfCircle() {
+        var rig = Rig.armed(config: voiceConfig())
+        #expect(rig.drawCircle(radius: 0.10, seconds: 0.5, turns: 0.5).isEmpty)
+    }
+
+    @Test("one finger drawing a circle is not a voice circle")
+    func oneFingerCircle() {
+        var rig = Rig.swiping(config: voiceConfig())
+        let events = rig.drawCircle(radius: 0.10, seconds: 1.0)
+        #expect(!events.contains(.circle))
+    }
+
+    @Test("two fingers drawing a circle is not a voice circle")
+    func twoFingerCircle() {
+        var rig = Rig.scrolling(config: voiceConfig())
+        let events = rig.drawCircle(radius: 0.10, seconds: 1.0)
+        #expect(!events.contains(.circle))
+    }
+
+    // The whole stretch (hold plus circle up to the moment it completes) must stay inside
+    // `strokePoseHold` (1 s), or palm mode lapses mid-circle on purpose.
+    @Test("palm mode survives unclear pose readings, so the circle still counts")
+    func unclearPoseKeepsPalmMode() {
+        var rig = Rig.armed(config: voiceConfig())
+        rig.hold(for: 0.2, pose: .other)
+        let events = rig.drawCircle(radius: 0.10, seconds: 0.7, pose: .other)
+        #expect(events == [.circle])
+    }
+
+    @Test("but a long stretch with no palm reading ends palm mode")
+    func longUnclearStretchEndsPalmMode() {
+        var rig = Rig.armed(config: voiceConfig())
+        rig.hold(for: 1.5, pose: .other)
+        let events = rig.drawCircle(radius: 0.10, seconds: 1.0, pose: .other)
+        #expect(events.isEmpty)
+    }
+
+    @Test("a held fist still stops it, even in palm mode")
+    func fistStillDisarms() {
+        var rig = Rig.armed(config: voiceConfig())
+        let events = rig.hold(for: 0.8, pose: .fist)
+        #expect(events.contains(.disarmed))
     }
 }

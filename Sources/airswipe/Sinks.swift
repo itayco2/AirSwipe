@@ -37,6 +37,8 @@ final class ConsoleSink: ActionSink {
         case .scroll(let pixels):
             burstPixels += pixels
             scrolledThisFrame = true
+        case .toggleVoice:
+            break
         }
     }
 
@@ -114,6 +116,8 @@ final class CGEventSink: ActionSink {
             }
         case .scroll(let pixels):
             postScroll(invertScroll ? -pixels : pixels)
+        case .toggleVoice:
+            break
         }
     }
 

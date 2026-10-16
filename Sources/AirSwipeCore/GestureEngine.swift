@@ -60,6 +60,9 @@ public final class GestureEngine {
     private var candidateY = 0.5
     /// The last time the swipe pose was read, however briefly, for `strokePoseHold`.
     private var lastSwipePoseTime: TimeInterval = -.infinity
+    /// The last time an open palm was read, however briefly, for palm mode's hold.
+    private var lastPalmPoseTime: TimeInterval = -.infinity
+    private var circle: CircleDetector
     private var scrollNeutralY = 0.5
     /// Smoothed hand height while the page is following the hand.
     private var followY: Double?
@@ -101,6 +104,7 @@ public final class GestureEngine {
 
     public init(config: GestureConfig = GestureConfig()) {
         self.config = config
+        self.circle = CircleDetector(config: config)
     }
 
     /// One line describing the engine's internal state, for debugging.
@@ -142,6 +146,7 @@ public final class GestureEngine {
                 lastStrokeTime = -.infinity
                 awaitingReturn = false
                 mode = .openPalm
+                lastPalmPoseTime = time
                 candidatePose = .openPalm
                 candidateSince = time
                 candidateY = sample.y
@@ -216,20 +221,26 @@ public final class GestureEngine {
     /// `poseStableDuration`. Entering scroll mode records the height it started
     /// at, which `.rate` scrolling is measured from.
     ///
-    /// Stroke mode is stickier. A reading that is merely unclear (`.other`, `.fist`)
-    /// does not end it and cancels any switch that was pending, because with the hand
-    /// low in the frame or moving fast the pose reads that way most of the time even
-    /// though one finger is still what is shown. It ends when a clear different pose
-    /// has been steady, or when `strokePoseHold` has passed with no one-finger reading.
+    /// Stroke mode and palm mode are stickier. A reading that is merely unclear
+    /// (`.other`, `.fist`) does not end them and cancels any switch that was pending,
+    /// because with the hand low in the frame or moving fast the pose reads that way
+    /// most of the time even though the same pose is still being shown. The mode ends
+    /// when a clear different pose has been steady, or when `strokePoseHold` has passed
+    /// with no reading of its own pose.
     private func updateMode(for sample: HandSample, at time: TimeInterval) {
         if sample.pose == config.swipePose {
             lastSwipePoseTime = time
         }
-        if mode == config.swipePose, sample.pose == .other || sample.pose == .fist {
+        if sample.pose == .openPalm {
+            lastPalmPoseTime = time
+        }
+        let isUnclear = sample.pose == .other || sample.pose == .fist
+        if isUnclear, mode == config.swipePose || mode == .openPalm {
             candidatePose = mode
             candidateSince = time
             candidateY = sample.y
-            if time - lastSwipePoseTime >= config.strokePoseHold {
+            let lastClear = mode == .openPalm ? lastPalmPoseTime : lastSwipePoseTime
+            if time - lastClear >= config.strokePoseHold {
                 mode = .other
                 candidatePose = .other
             }
@@ -330,6 +341,15 @@ public final class GestureEngine {
         }
         if let amount = followFlick(sample) {
             return [.scroll(amount: amount)]
+        }
+        if config.circleEnabled {
+            if mode == .openPalm {
+                if circle.add(x: sample.x, y: sample.y, at: time) {
+                    return [.circle]
+                }
+            } else {
+                circle.reset()
+            }
         }
         guard mode == config.scrollPose else { return [] }
         return scroll(for: sample, dt: dt)
@@ -528,6 +548,7 @@ public final class GestureEngine {
         previousTime = nil
         followY = nil
         follow = nil
+        circle.reset()
         lastRejection = nil
     }
 

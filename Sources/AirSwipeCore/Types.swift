@@ -54,6 +54,8 @@ public enum GestureEvent: Equatable {
     /// (scroll toward the top of the page). The value is `rate * dt`, where rate is
     /// -1...1 and 1 is full speed, so the sink multiplies by its pixels-per-second.
     case scroll(amount: Double)
+    /// An open palm drew a circle in the air: toggle voice dictation.
+    case circle
 }
 
 /// Why the engine stopped listening. Lets the app say what happened instead of

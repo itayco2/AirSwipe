@@ -164,6 +164,8 @@ let camera = CameraSource { pixelBuffer, time in
             print("\(stamp(time))flick \(direction == .up ? "up" : "down")")
         case .scroll:
             break
+        case .circle:
+            break
         }
         for action in mapper.actions(for: event) {
             sink.perform(action)
