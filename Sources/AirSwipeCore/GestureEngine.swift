@@ -302,10 +302,12 @@ public final class GestureEngine {
             candidateSince = time
             candidateX = sample.x
             candidateY = sample.y
-        } else if mode != candidatePose,
+        } else if mode != candidatePose, candidatePose == config.swipePose,
                   hypot(sample.x - candidateX, sample.y - candidateY) > config.poseStableRadius {
-            // The hand moved while this pose was showing: a moving hand is not a pose
-            // change on purpose. Start counting again from where it is now.
+            // The hand moved while one finger was showing: a moving hand is not a change to
+            // swipe mode on purpose (one finger is what a camera misreads in a moving hand,
+            // and a swipe is what that would fire). Start counting again from here. Other
+            // poses are not held to this: an open palm must take over at once.
             candidateSince = time
             candidateX = sample.x
             candidateY = sample.y
@@ -375,7 +377,9 @@ public final class GestureEngine {
             return [.swipe(direction)]
         }
         if config.circleEnabled {
-            if mode == .openPalm {
+            // An open palm showing counts even if the mode has not caught up with it yet, so a
+            // circle that starts right after a swipe is not missing its first stretch.
+            if mode == .openPalm || sample.pose == .openPalm {
                 if circle.add(x: sample.x, y: sample.y, at: time) {
                     return [.circle]
                 }
@@ -424,9 +428,21 @@ public final class GestureEngine {
         let name = goesRight ? "right" : "left"
         let travel = travelX
 
+        // A move turned down below is forgotten, not postponed: left in the window it would
+        // fire as a swipe the moment the reason for turning it down went away (the mode
+        // catching up, the palm guard running out).
         guard mode == config.swipePose else {
             lastRejection = String(format: "%@ %.2f ignored: mode is %@, not %@ (pose now %@)",
                                    name, travel, "\(mode)", "\(config.swipePose)", "\(sample.pose)")
+            window.removeAll()
+            return nil
+        }
+        // A swipe is made with one finger. An open palm showing a moment ago means this is a
+        // circle or a wave, even if the mode has not caught up with the palm yet.
+        guard time - lastPalmPoseTime >= config.swipePalmGuard else {
+            lastRejection = String(format: "%@ %.2f ignored: an open palm was showing %.2fs ago, a swipe is made with one finger",
+                                   name, travel, time - lastPalmPoseTime)
+            window.removeAll()
             return nil
         }
 

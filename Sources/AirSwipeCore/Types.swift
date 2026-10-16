@@ -93,10 +93,15 @@ public struct GestureConfig: Equatable {
     /// A pose must be seen continuously this long before it changes the mode, so
     /// a flicker between poses cannot switch what a movement means.
     public var poseStableDuration: Double = 0.15
-    /// And the hand must stay within this distance while it shows the new pose. A pose
-    /// shown on purpose is shown still; a camera misreading a moving hand (a palm circle
-    /// read as one finger for a moment) is not, and must not switch what a movement means.
+    /// And, for the swipe pose only, the hand must stay within this distance while it shows
+    /// it. One finger is the pose a camera misreads in a moving hand (a palm circle read as
+    /// one finger for a moment), and a swipe is the action that misreading would fire. The
+    /// open palm and two fingers are read reliably, so they take over without waiting for a
+    /// still hand: a palm circle drawn right after a swipe must not stay in swipe mode.
     public var poseStableRadius: Double = 0.04
+    /// A swipe is made with one finger, never an open palm. If a palm was read this recently
+    /// the move is a circle or a wave, not a swipe, even while the mode has not caught up.
+    public var swipePalmGuard: Double = 0.4
     /// The pose in which horizontal movement swipes.
     public var swipePose: HandPose = .oneFinger
     /// The pose in which hand height scrolls.

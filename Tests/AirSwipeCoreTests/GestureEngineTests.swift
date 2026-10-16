@@ -913,8 +913,14 @@ struct DiagnosticsTests {
     @Test("a swipe made in the wrong pose says which mode it was in")
     func wrongModeIsExplained() {
         var rig = Rig.armed()
-        rig.move(toX: 0.80, toY: 0.5, over: 0.20)
-        let why = rig.engine.lastRejection ?? ""
+        // A turned-down move is forgotten, so the reason shows on the frame it was turned
+        // down, not on every frame after. Move one frame at a time and keep the reasons.
+        var reasons: [String] = []
+        for step in 1...8 {
+            rig.move(toX: 0.5 + 0.0375 * Double(step), toY: 0.5, over: 1 / rig.fps)
+            if let why = rig.engine.lastRejection { reasons.append(why) }
+        }
+        let why = reasons.first ?? ""
         #expect(why.contains("right"))
         #expect(why.contains("mode is openPalm"))
     }
@@ -1023,6 +1029,11 @@ struct UnclearPoseTests {
             rig.hold(for: 0.1, pose: .openPalm)
             rig.hold(for: 0.1, pose: .other)
         }
+        // A swipe is not made within `swipePalmGuard` (0.4 s) of an open palm, so let that
+        // pass. One-finger readings keep the mode alive meanwhile: the mode is still
+        // one finger, which is the point of this test.
+        rig.hold(for: 0.1, pose: .oneFinger)
+        rig.hold(for: 0.45, pose: .other)
         let events = rig.move(toX: 0.80, toY: 0.5, over: 0.2, pose: .other)
         #expect(swipes(in: events) == [.swipe(.right)])
     }
@@ -1173,6 +1184,35 @@ struct CircleEngineTests {
                                          at: start + (point.t - loop[0].t))
         }
         #expect(swipes(in: events).isEmpty)
+    }
+
+    // Second live test (circle2.log, 2026-10-16): after a swipe the engine is in one-finger
+    // mode, and the user went straight into a palm circle without pausing. The hand showed an
+    // open palm for a full second, but the mode stayed one finger (a new pose had to be held
+    // still) and the circle's sideways travel fired a swipe. An open palm is the one pose the
+    // camera does not misread, so it must win at once.
+    @Test("a palm circle drawn straight after a swipe is a circle, not another swipe")
+    func circleStraightAfterASwipe() {
+        var rig = Rig.swiping(config: voiceConfig())
+        let swipe = rig.move(toX: 0.75, toY: 0.5, over: 0.25)
+        #expect(swipes(in: swipe) == [.swipe(.right)])
+        rig.pose = .openPalm
+        let events = rig.drawCircle(radius: 0.12, seconds: 1.0)
+        #expect(swipes(in: events).isEmpty)
+        #expect(events.contains(.circle))
+    }
+
+    @Test("a sideways move right after an open palm was showing is not a swipe")
+    func noSwipeRightAfterAPalm() {
+        var rig = Rig.swiping(config: voiceConfig())
+        // A brief palm reading, too short to change the mode, then a move with one finger.
+        rig.hold(for: 0.1, pose: .openPalm)
+        let early = rig.move(toX: 0.80, toY: 0.5, over: 0.2)
+        #expect(swipes(in: early).isEmpty)
+        // A moment later the same move is an ordinary swipe.
+        rig.hold(for: 0.6)
+        let later = rig.move(toX: 0.50, toY: 0.5, over: 0.2)
+        #expect(swipes(in: later) == [.swipe(.left)])
     }
 
     @Test("showing one finger and holding it still still switches to swiping")

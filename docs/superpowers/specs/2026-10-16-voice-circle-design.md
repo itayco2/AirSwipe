@@ -194,10 +194,25 @@ the first quarter of one looks like a swipe left or right, and a half circle loo
 perfectly level one (its leftmost and rightmost points are at the same height). In palm mode
 swipes are ignored, but when the camera read the palm as one finger for just 0.15 s
 mid-circle the mode flipped to one finger and the swipe fired. The fix is in the mode
-change, not the swipe: a new pose only becomes the mode if the hand stays within
-`poseStableRadius` (0.04) while it is shown for `poseStableDuration` (0.15 s). A pose shown
-on purpose is shown still; a misread moving hand is not. The cost is that after a swipe (one-finger
-mode) a palm circle needs a still palm first. A recorded loop is now a regression test.
+change, not the swipe. A first fix made *every* new pose wait for a still hand; the second
+live test (`circle2.log`) showed that was wrong: after a swipe the engine stays in one-finger
+mode, the user went straight into a palm circle, the hand showed an open palm for a whole
+second, yet the mode never switched because the hand was moving, and the circle swiped.
+Replaying that log through the engine before and after the first fix showed exactly that.
+The final rules are asymmetric, because the poses are not equally reliable:
+
+- An open palm (and two fingers) takes over at once, as before: all four fingers straight
+  is a pose the camera does not misread.
+- One finger, the pose that gets misread in a moving hand, becomes the mode only if the hand
+  stays within `poseStableRadius` (0.04) while it is shown for `poseStableDuration`.
+- A swipe is never made with an open palm: none fires within `swipePalmGuard` (0.4 s) of
+  a palm reading, even while the mode has not caught up.
+- A move turned down for either reason is forgotten (the motion window is cleared), not
+  postponed. Left in the window it fired as a delayed swipe the moment the palm guard ran out.
+- The circle detector also sees palm frames while the mode is catching up, so a circle that
+  starts right after a swipe is not missing its first stretch.
+
+Recorded loops are regression tests, and the second capture replays with no swipe at the circle.
 
 ## Known limits
 
