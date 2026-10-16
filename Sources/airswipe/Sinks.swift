@@ -19,15 +19,27 @@ extension ActionSink {
 final class ConsoleSink: ActionSink {
     private let style: CGEventSink.NavigationStyle
     private let voiceKey: String
-    private let focusClaude: Bool
+    private let voiceTarget: VoiceTarget
     private var burstPixels: Int32 = 0
     private var scrolledThisFrame = false
     private var lastReport = Date.distantPast
 
-    init(style: CGEventSink.NavigationStyle, voiceKey: String, focusClaude: Bool) {
+    init(style: CGEventSink.NavigationStyle, voiceKey: String, voiceTarget: VoiceTarget) {
         self.style = style
         self.voiceKey = voiceKey
-        self.focusClaude = focusClaude
+        self.voiceTarget = voiceTarget
+    }
+
+    /// What a dry run says about where the keys would go.
+    private var whereKeysGo: String {
+        switch voiceTarget {
+        case .auto:
+            return "in the app in front (focusing the Claude message box first only if that app is Claude)"
+        case .claude:
+            return "after bringing the Claude app forward and focusing its message box"
+        case .frontmost:
+            return "in whatever is focused"
+        }
     }
 
     func perform(_ action: Action) {
@@ -42,15 +54,11 @@ final class ConsoleSink: ActionSink {
             burstPixels += pixels
             scrolledThisFrame = true
         case .startVoice:
-            print(focusClaude
-                  ? "  -> would focus the Claude message box, then press the voice key (\(voiceKey)) to start dictation"
-                  : "  -> would press the voice key (\(voiceKey)) to start dictation")
+            print("  -> would press the voice key (\(voiceKey)) to start dictation, \(whereKeysGo)")
         case .stopVoice:
             print("  -> would press the voice key (\(voiceKey)) to stop dictation")
         case .sendMessage:
-            print(focusClaude
-                  ? "  -> would focus the Claude message box, then press Return to send"
-                  : "  -> would press Return to send")
+            print("  -> would press Return to send, \(whereKeysGo)")
         }
     }
 
@@ -95,19 +103,29 @@ final class CGEventSink: ActionSink {
     private let style: NavigationStyle
     private let invertScroll: Bool
     private let voiceChord: KeyChord?
-    /// Brings the Claude app's message box into focus before dictation starts. Nil
-    /// presses the key into whatever is focused.
-    private let promptFocus: ClaudePromptFocus?
+    /// Where the keys go: see `VoiceTarget`. Whether the Claude message box is focused first
+    /// is decided each time, from the app in front.
+    private let voiceTarget: VoiceTarget
+    private let promptFocus = ClaudePromptFocus()
     /// Serial, so two quick circles can never interleave their key events.
     private let voiceQueue = DispatchQueue(label: "airswipe.voice-key")
     /// When dictation was last told to stop. Only touched on `voiceQueue`.
     private var lastVoiceStop = Date.distantPast
 
-    init(style: NavigationStyle, invertScroll: Bool, voiceChord: KeyChord?, focusClaude: Bool) {
+    init(style: NavigationStyle, invertScroll: Bool, voiceChord: KeyChord?, voiceTarget: VoiceTarget) {
         self.style = style
         self.invertScroll = invertScroll
         self.voiceChord = voiceChord
-        self.promptFocus = focusClaude ? ClaudePromptFocus() : nil
+        self.voiceTarget = voiceTarget
+    }
+
+    /// Whether the Claude message box should be focused before a key is pressed. Always for
+    /// `claude`; for `auto` only when the app in front already is Claude, so a circle drawn on
+    /// a YouTube page dictates into that page instead of switching the screen to Claude.
+    private func shouldFocusClaude() -> Bool {
+        voiceTarget.focusesClaude(
+            frontmostBundleID: NSWorkspace.shared.frontmostApplication?.bundleIdentifier,
+            claudeBundleID: ClaudePromptFocus.bundleIdentifier)
     }
 
     /// Returns whether this process may post events, and asks macOS to show the
@@ -172,8 +190,8 @@ final class CGEventSink: ActionSink {
             if sinceStop < dictationSettle {
                 Thread.sleep(forTimeInterval: dictationSettle - sinceStop)
             }
-            if let promptFocus = self.promptFocus {
-                let outcome = promptFocus.focus()
+            if self.shouldFocusClaude() {
+                let outcome = self.promptFocus.focus()
                 if outcome.isFocused {
                     Thread.sleep(forTimeInterval: 0.06)
                 } else {
@@ -184,20 +202,19 @@ final class CGEventSink: ActionSink {
         }
     }
 
-    /// Starting dictation needs the cursor in a text field, so first bring the Claude
-    /// message box into focus (when asked to), then press the key. The focus step can
-    /// take a moment, so it runs on `voiceQueue`; the press is queued behind it.
+    /// Starting dictation needs the cursor in a text field. In the Claude app that is the
+    /// message box, which is focused first when `VoiceTarget` says so; anywhere else the
+    /// cursor is wherever the user put it. The focus step can take a moment, so it runs on
+    /// `voiceQueue`; the press is queued behind it.
     private func startVoice(_ chord: KeyChord) {
-        guard let promptFocus else {
-            postChord(chord)
-            return
-        }
         voiceQueue.async {
-            let outcome = promptFocus.focus()
-            if case .focused = outcome {
-                Thread.sleep(forTimeInterval: 0.06)
-            } else {
-                fputs("airswipe: \(outcome); pressing the voice key anyway\n", stderr)
+            if self.shouldFocusClaude() {
+                let outcome = self.promptFocus.focus()
+                if case .focused = outcome {
+                    Thread.sleep(forTimeInterval: 0.06)
+                } else {
+                    fputs("airswipe: \(outcome); pressing the voice key anyway\n", stderr)
+                }
             }
             self.postChord(chord)
         }

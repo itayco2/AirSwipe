@@ -58,9 +58,17 @@ the same code and differ only in the key and in who transcribes:
    presses the key; a stop circle only presses the key. AirSwipe asks the app to build
    its tree at startup so the first circle does not wait. The mapper therefore says
    `startVoice` or `stopVoice` (it tracks `voiceActive`, reset on arm and disarm)
-   instead of one toggle. `--voice-target frontmost` skips focusing for terminals, and
-   `--focus-claude` runs the focusing step alone as a check. If the box is not found, a
-   warning is printed and the key is pressed anyway.
+   instead of one toggle. `--focus-claude` runs the focusing step alone as a check. If the
+   box is not found, a warning is printed and the key is pressed anyway.
+
+   **Revised after the final live test (2026-10-16):** always bringing Claude forward was
+   wrong for someone circling on, say, a YouTube page: the whole screen switched over to
+   Claude (it lives on its own desktop) instead of dictating where the user was. `VoiceTarget`
+   now decides: `auto` (the default) presses the keys into the app in front, and focuses
+   Claude's message box first only when that app already is Claude, so the screen never
+   switches; `claude` keeps the old always-bring-it-forward behaviour; `frontmost` never
+   touches focus. The thumbs-up Return follows the same rule. The decision is a small pure
+   function in the core (`VoiceTarget.focusesClaude`) so it is unit-tested.
 
 ## Detecting the circle
 

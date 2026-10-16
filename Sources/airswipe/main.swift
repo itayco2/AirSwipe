@@ -14,8 +14,8 @@ struct Options {
     var live = false
     var voice = false
     var voiceKey = defaultVoiceChord
-    /// Focus the Claude app's message box before starting dictation (`--voice-target claude`).
-    var focusClaude = true
+    /// Where dictation and the send key go (`--voice-target`). See `VoiceTarget`.
+    var voiceTarget = VoiceTarget.auto
     /// `--focus-claude`: focus the message box once and exit, to test that step alone.
     var focusOnly = false
     var history = false
@@ -29,7 +29,7 @@ let usage = """
 airswipe: switch screens and scroll by moving your hand in the air.
 
 USAGE
-  airswipe [--live] [--voice] [--voice-key CHORD] [--voice-target claude|frontmost]
+  airswipe [--live] [--voice] [--voice-key CHORD] [--voice-target auto|claude|frontmost]
            [--history] [--invert-scroll] [--rate-scroll] [--no-mirror] [--debug]
   airswipe --focus-claude
 
@@ -40,8 +40,9 @@ OPTIONS
                    its shortcut. Set macOS Dictation's shortcut to the same chord.
   --voice-key KEY  The chord to press, like ctrl+opt+d or meta+k (default ctrl+opt+d).
                    Implies --voice.
-  --voice-target T claude (default): bring the Claude app forward and put the cursor in
-                   its message box before starting dictation, so no click is needed.
+  --voice-target T auto (default): dictate where you are, in the app in front. Only if that
+                   app is Claude is its message box focused first, so no click is needed.
+                   claude: always bring the Claude app forward and focus its message box.
                    frontmost: just press the key into whatever is focused.
   --focus-claude   Focus the Claude message box once and exit (tests that step alone).
   --history        Swipes go back/forward inside an app (Cmd+[ / Cmd+]) instead of
@@ -80,13 +81,11 @@ func parseOptions(_ arguments: [String]) -> Options {
             options.voice = true
             options.voiceKey = value
         case "--voice-target":
-            switch remaining.next() {
-            case "claude"?: options.focusClaude = true
-            case "frontmost"?: options.focusClaude = false
-            default:
-                fputs("airswipe: --voice-target is claude or frontmost\n\n\(usage)\n", stderr)
+            guard let value = remaining.next(), let target = VoiceTarget(argument: value) else {
+                fputs("airswipe: --voice-target is auto, claude or frontmost\n\n\(usage)\n", stderr)
                 exit(2)
             }
+            options.voiceTarget = target
         case "--focus-claude": options.focusOnly = true
         case "--history": options.history = true
         case "--desktops": break // now the default; accepted so old commands still run
@@ -160,8 +159,8 @@ if options.live {
     sink = CGEventSink(style: options.history ? .browserHistory : .desktops,
                        invertScroll: options.invertScroll,
                        voiceChord: options.voice ? KeyChord.parse(options.voiceKey) : nil,
-                       focusClaude: options.voice && options.focusClaude)
-    if options.voice && options.focusClaude {
+                       voiceTarget: options.voiceTarget)
+    if options.voice && options.voiceTarget != .frontmost {
         // The Claude app takes several seconds to build its accessibility tree, so ask now
         // and the first circle does not have to wait for it.
         ClaudePromptFocus().prepare()
@@ -169,7 +168,7 @@ if options.live {
 } else {
     sink = ConsoleSink(style: options.history ? .browserHistory : .desktops,
                        voiceKey: options.voiceKey,
-                       focusClaude: options.focusClaude)
+                       voiceTarget: options.voiceTarget)
 }
 
 NSApplication.shared.setActivationPolicy(.accessory)

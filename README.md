@@ -29,7 +29,7 @@ The interesting part of this project is deciding what a hand is *doing* from a n
 
 - **A pure state machine.** `GestureEngine` takes timestamped hand samples and returns
   events. It never reads a clock or touches the camera, so false positives, the hard
-  part of gesture control, are tested with synthetic hand paths (173 tests,
+  part of gesture control, are tested with synthetic hand paths (178 tests,
   Swift Testing) and by replaying recorded camera logs.
 - **Poses from finger straightness.** A finger is extended or curled by how straight
   its own joints are, which needs no wrist (out of view when a hand rests above a
@@ -48,10 +48,11 @@ The interesting part of this project is deciding what a hand is *doing* from a n
   thumbs up, looser in a fist), so that is what the classifier checks.
 - **Voice without audio code.** AirSwipe records nothing. It presses the macOS
   Dictation shortcut as a realistic keyboard event (modifiers as their own events, the
-  key held ~100 ms; a bare key-down/up starts Dictation but cannot stop it). The Claude
-  desktop app is built on Chromium, so a start circle asks it to build its
-  accessibility tree and focuses the message box through the macOS accessibility API,
-  with no click needed.
+  key held ~100 ms; a bare key-down/up starts Dictation but cannot stop it). It dictates
+  into the app you are in. The Claude desktop app is built on Chromium and has no
+  shortcut for its message box, so when that app is in front AirSwipe focuses the box
+  through the macOS accessibility API (after asking the app to build its accessibility
+  tree), with no click needed.
 - **Safe by default.** It is a dry run that posts nothing until you pass `--live`, and
   voice features are off until you pass `--voice`.
 
@@ -97,11 +98,18 @@ One-time setup:
 3. Run `swift run airswipe --live --voice` from a shell that has Accessibility
    permission and give it about 6 seconds, so the Claude app can build its interface.
 
-Then: draw a circle with an open palm, talk, then give a thumbs up. The circle focuses
-the Claude message box and starts dictation; the thumbs up stops it, waits for the text
-to land, and presses Return. A second circle instead of the thumbs up stops dictation
-without sending. `--voice-target frontmost` presses the key into whatever is focused
-(for a terminal), and `airswipe --focus-claude` tests the focusing step alone.
+Then: draw a circle with an open palm, talk, then give a thumbs up. The circle starts
+dictation, the thumbs up stops it, waits for the text to land, and presses Return. A
+second circle instead of the thumbs up stops dictation without sending.
+
+**It dictates where you are.** By default (`--voice-target auto`) the keys go to the app
+in front, so on a YouTube page you click the search box, circle, talk, and give a thumbs
+up to search. The screen never switches. Only when the app in front is the Claude app does
+AirSwipe put the cursor in its message box first, so no click is needed there.
+`--voice-target claude` always brings the Claude app forward and focuses its message box,
+from any app (the screen switches to Claude if it lives on another desktop);
+`--voice-target frontmost` never touches focus, not even inside Claude. `airswipe
+--focus-claude` tests the focusing step alone.
 
 ## Options
 
@@ -111,7 +119,7 @@ without sending. `--voice-target frontmost` presses the key into whatever is foc
 | `--live` | Post real key and scroll events |
 | `--voice` | Palm circle starts/stops dictation, thumbs up sends |
 | `--voice-key CHORD` | The chord to press, like `ctrl+opt+d` or `meta+k`. Implies `--voice` |
-| `--voice-target claude\|frontmost` | `claude` (default): focus the Claude message box first. `frontmost`: press the key into whatever is focused |
+| `--voice-target auto\|claude\|frontmost` | `auto` (default): dictate in the app in front, focusing the Claude message box first only if that app is Claude. `claude`: always bring Claude forward and focus its message box. `frontmost`: press the key into whatever is focused |
 | `--focus-claude` | Focus the Claude message box once and exit, to test that step alone |
 | `--history` | Swipes go back/forward inside an app (`Cmd+[` / `Cmd+]`) instead of switching screens |
 | `--invert-scroll` | Flip the scroll direction (pinch and fine scroll) |
@@ -138,7 +146,8 @@ Every threshold is a field of `GestureConfig` in `Sources/AirSwipeCore/Types.swi
 | A swipe is ignored right after another | The return guard waits for your hand to come back to where the swipe started; rest about 1.5 s, or tune `swipeReturnGuard` / `swipeHomeRadius` |
 | One or two fingers are not recognized | `--debug`: `str=` is each finger's straightness (extended ≈ 0.98 to 1.00, curled ≤ 0.9). Curl the others tighter, or tune `extendedStraightness` / `curledStraightness` |
 | The circle does nothing | Arm first, use an open palm, draw one loop that closes within 2 s and spans at least 0.10 of the picture. Tune `circleMinTurn`, `circleMinSize`, `circleWindow` |
-| The circle also switches screens | A swipe is made with one finger, so none fires within 0.4 s of an open palm (`swipePalmGuard`), a flat palm takes over from one-finger mode at once, and one-finger mode only starts once your hand is held still (`poseStableRadius`, 0.04). Show a flat open palm before you circle. With `--debug`, `mode=openPalm` should appear within a fraction of a second, and a refused swipe ends the line with `REJECTED … an open palm was showing` |
+| The circle switches the whole screen to the Claude app | That was the old behaviour (`--voice-target claude`): the start circle brought Claude forward. The default is now `auto`, which dictates in the app in front. If you still see it, check you did not pass `--voice-target claude` |
+| The circle also swipes to another screen | A swipe is made with one finger, so none fires within 0.4 s of an open palm (`swipePalmGuard`), a flat palm takes over from one-finger mode at once, and one-finger mode only starts once your hand is held still (`poseStableRadius`, 0.04). Show a flat open palm before you circle. With `--debug`, `mode=openPalm` should appear within a fraction of a second, and a refused swipe ends the line with `REJECTED … an open palm was showing` |
 | The circle fires but dictation does not start or stop | The macOS Dictation shortcut must equal `--voice-key`, and the app running AirSwipe needs Accessibility permission. Try `airswipe --focus-claude` |
 | The thumbs up does not send, or a fist sends | `--debug`: `thumb=a/b` is the thumb's straightness and how far up it points. A thumbs up needs `a` ≥ 0.95, `b` ≥ 0.80 and the four fingers curled tightly (their average `str=` ≤ 0.50): squeeze the fingers. Hold it 0.7 s |
 
@@ -158,7 +167,7 @@ Sources/AirSwipeCore/    pure logic, no camera or AppKit, fully unit-tested
   ActionMapper, KeyChord events to actions; key chord parsing
 Sources/airswipe/        camera, Vision, CGEvent, menu bar, accessibility
   CameraSource, HandTracker, Sinks, StatusItem, ClaudePromptFocus, main
-Tests/AirSwipeCoreTests  173 tests
+Tests/AirSwipeCoreTests  178 tests
 docs/superpowers/        design specs, plans and the key-press spike
 ```
 
