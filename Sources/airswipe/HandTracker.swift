@@ -123,8 +123,37 @@ final class HandTracker {
             thumbText = "\(format(straight))/\(format(up))"
         }
 
+        var pinchText = "--"
+        if let pinch = pinchReading(observation) {
+            pinchText = "\(format(pinch.ratio))/\(format(pinch.confidence))"
+        }
+
         return "pose=\(pose) str=\(straightness.joined(separator: "/")) thumb=\(thumbText) "
+            + "pinch=\(pinchText) "
             + "tipConf=\(confidences.joined(separator: "/")) wrist=\(wrist) "
             + "x=\(format(Double(x))) y=\(format(Double(y)))"
+    }
+
+    /// How close the thumb tip is to the index tip, as a share of the width of the
+    /// knuckles (index to little finger), so it does not depend on how far the hand is
+    /// from the camera. Small when the two touch. `confidence` is the weaker of the two
+    /// tips'. Heights are scaled by the frame's aspect ratio so the distance is round.
+    private func pinchReading(_ observation: VNHumanHandPoseObservation) -> (ratio: Double, confidence: Double)? {
+        func joint(_ name: Joint) -> (point: CGPoint, confidence: Double)? {
+            guard let recognized = try? observation.recognizedPoint(name),
+                  recognized.confidence >= minimumConfidence else { return nil }
+            return (recognized.location, Double(recognized.confidence))
+        }
+        guard let thumbTip = joint(.thumbTip), let indexTip = joint(.indexTip),
+              let indexKnuckle = joint(.indexMCP), let littleKnuckle = joint(.littleMCP) else {
+            return nil
+        }
+        func distance(_ a: CGPoint, _ b: CGPoint) -> Double {
+            hypot(Double(a.x - b.x), Double(a.y - b.y) * 0.75)
+        }
+        let width = distance(indexKnuckle.point, littleKnuckle.point)
+        guard width > 0 else { return nil }
+        return (distance(thumbTip.point, indexTip.point) / width,
+                min(thumbTip.confidence, indexTip.confidence))
     }
 }
