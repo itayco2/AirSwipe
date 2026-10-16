@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** An open-palm circle in the air presses Claude Code's own push-to-talk key, so a developer can start and stop voice dictation without touching the keyboard.
+**Goal:** An open-palm circle in the air presses the key that toggles voice dictation (macOS Dictation by default, so it works in the Claude desktop app; Claude Code's CLI `/voice tap` via `--voice-key`), so a developer can start and stop dictation without touching the keyboard.
 
-**Architecture:** A pure, clock-free `CircleDetector` in `AirSwipeCore` recognizes the circle, the engine emits `GestureEvent.circle` in palm mode, and the mapper turns it into `Action.toggleVoice`. The live sink posts one key chord (parsed by a pure `KeyChord`), so AirSwipe contains no audio code. A throwaway spike runs first to prove a synthetic key press can start Claude Code recording at all.
+**Architecture:** A pure, clock-free `CircleDetector` in `AirSwipeCore` recognizes the circle, the engine emits `GestureEvent.circle` in palm mode, and the mapper turns it into `Action.toggleVoice`. The live sink posts one key chord (parsed by a pure `KeyChord`) as a realistic keystroke, so AirSwipe contains no audio code. The key-press spike (Task 1) is done and passed; its result changed the target from Claude Code's `/voice` to macOS Dictation and showed that the press must look like a real one.
 
 **Tech Stack:** Swift 6.1 (language mode 5), SwiftPM, CoreGraphics `CGEvent`, AppKit `NSStatusItem`, Swift Testing.
 
@@ -16,7 +16,8 @@
 - `AirSwipeCore` must not import AVFoundation, Vision, AppKit or CoreGraphics. `KeyChord` stays a plain value type; the `CGEventFlags` conversion lives in `Sources/airswipe/Sinks.swift`.
 - Default run mode is dry-run; only `--live` may post synthetic events. Voice is off unless `--voice` (or `--voice-key`) is given.
 - Circle: open palm only, only while armed, either direction. Starting values: window 1.5 s, turn at least 5.5 rad (about 315°), extent at least 0.10 across and down, roundness 0.5, cooldown 1 s, aspect ratio 0.75.
-- One circle sends one key press (down, then up). The recording state is assumed to flip on each circle and resets when AirSwipe disarms.
+- One circle sends one *realistic* key press: modifier keys as their own events, the key held about 100 ms, then released. A bare key-down/key-up starts macOS Dictation but cannot stop it (see `docs/superpowers/spike-voice-key.md`). The press runs on a background queue. The recording state is assumed to flip on each circle and resets when AirSwipe disarms.
+- Default chord `ctrl+opt+d`, matching a macOS Dictation shortcut the user sets once.
 - Unclear pose readings (`.other`, `.fist`) must not end palm mode, for up to `strokePoseHold`.
 
 ---
@@ -41,9 +42,11 @@
 
 ---
 
-### Task 1: Spike — can a synthetic key press start Claude Code recording?
+### Task 1: Spike — can a synthetic key press start recording?
 
-This task needs the user at the keyboard. **If no chord works, stop here: do not start Task 2. Tell the user and revisit the spec.**
+> **Status: DONE (2026-10-16), passed.** Result and lessons: `docs/superpowers/spike-voice-key.md`. The user works in the Claude desktop app, so the spike ran against macOS Dictation (shortcut Control+Option+D), not Claude Code's `/voice`. A bare key-down/up started dictation but did not stop it; modifier keys as their own events plus a 100 ms hold did both. Skip to Task 2. The steps below are kept as a record of the command-line-tool variant, which is untested.
+
+This task needed the user at the keyboard. **If no chord worked, the plan would have stopped here.**
 
 **Files:**
 - Create (outside the repo, in the session scratchpad directory): `spike-key.swift`
@@ -960,10 +963,12 @@ and replace its `case .toggleVoice: break` with:
             print("  -> would press the voice key (\(voiceKey)) to start or stop recording")
 ```
 
-2. `CGEventSink`: add the chord and use it. Add a property and change `init`:
+2. `CGEventSink`: add the chord and use it. Add properties and change `init`:
 
 ```swift
     private let voiceChord: KeyChord?
+    /// Serial, so two quick circles can never interleave their key events.
+    private let voiceQueue = DispatchQueue(label: "airswipe.voice-key")
 ```
 
 ```swift
@@ -974,13 +979,60 @@ and replace its `case .toggleVoice: break` with:
     }
 ```
 
-and replace its `case .toggleVoice: break` with:
+replace its `case .toggleVoice: break` with:
 
 ```swift
         case .toggleVoice:
             if let chord = voiceChord {
-                postKey(CGKeyCode(chord.keyCode), flags: chord.flags)
+                postChord(chord)
             }
+```
+
+and add this method next to `postKey`. The spike showed that a bare key-down and key-up
+starts macOS Dictation but cannot stop it; pressing the modifier keys as their own events
+and holding the key about 100 ms does both (`docs/superpowers/spike-voice-key.md`). The
+sleeps run on `voiceQueue`, never on the camera thread:
+
+```swift
+    /// Presses a chord the way a real keyboard does: each modifier as its own
+    /// flagsChanged event, the key held about 100 ms, then everything released.
+    private func postChord(_ chord: KeyChord) {
+        voiceQueue.async {
+            let source = CGEventSource(stateID: .hidSystemState)
+            let modifiers: [(isOn: Bool, flag: CGEventFlags, key: CGKeyCode)] = [
+                (chord.control, .maskControl, 0x3B),
+                (chord.option, .maskAlternate, 0x3A),
+                (chord.shift, .maskShift, 0x38),
+                (chord.command, .maskCommand, 0x37),
+            ]
+            var held: CGEventFlags = []
+
+            func postModifier(_ key: CGKeyCode) {
+                let event = CGEvent(keyboardEventSource: source, virtualKey: key, keyDown: true)
+                event?.type = .flagsChanged
+                event?.flags = held
+                event?.post(tap: .cghidEventTap)
+                Thread.sleep(forTimeInterval: 0.02)
+            }
+
+            for modifier in modifiers where modifier.isOn {
+                held.insert(modifier.flag)
+                postModifier(modifier.key)
+            }
+            let keyCode = CGKeyCode(chord.keyCode)
+            let down = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: true)
+            down?.flags = chord.flags
+            down?.post(tap: .cghidEventTap)
+            Thread.sleep(forTimeInterval: 0.1)
+            let up = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: false)
+            up?.flags = chord.flags
+            up?.post(tap: .cghidEventTap)
+            for modifier in modifiers.reversed() where modifier.isOn {
+                held.remove(modifier.flag)
+                postModifier(modifier.key)
+            }
+        }
+    }
 ```
 
 3. At the end of the file add the flag conversion (kept here so `AirSwipeCore` stays free of CoreGraphics):
@@ -1001,12 +1053,14 @@ private extension KeyChord {
 
 - [ ] **Step 3: Flags, wiring and events in `main.swift`**
 
-1. Above `struct Options`, add the default chord (use the chord recorded in Task 1 if it is not `meta+k`):
+1. Above `struct Options`, add the default chord (the one the spike tested):
 
 ```swift
-/// The key AirSwipe presses to start and stop Claude Code's voice input. The user binds
-/// `voice:pushToTalk` to the same chord in ~/.claude/keybindings.json.
-let defaultVoiceChord = "meta+k"
+/// The key AirSwipe presses to start and stop dictation. The user sets macOS Dictation's
+/// shortcut (System Settings > Keyboard > Dictation > Shortcut > Customize...) to the
+/// same chord. For Claude Code's command-line `/voice tap`, pass `--voice-key meta+k`
+/// and bind `voice:pushToTalk` to it instead.
+let defaultVoiceChord = "ctrl+opt+d"
 ```
 
 2. In `Options`, add:
@@ -1021,9 +1075,9 @@ let defaultVoiceChord = "meta+k"
 add these OPTIONS lines after `--live`:
 
 ```
-  --voice          An open-palm circle starts and stops Claude Code voice input by
-                   pressing its voice key. Needs /voice tap and a matching keybinding.
-  --voice-key KEY  The chord to press, like meta+k or ctrl+shift+v (default meta+k).
+  --voice          An open-palm circle starts and stops voice dictation by pressing
+                   its shortcut. Set macOS Dictation's shortcut to the same chord.
+  --voice-key KEY  The chord to press, like ctrl+opt+d or meta+k (default ctrl+opt+d).
                    Implies --voice.
 ```
 
@@ -1135,24 +1189,25 @@ git commit -m "feat: --voice presses Claude Code's voice key on an open-palm cir
 - [ ] **Step 1: README**
 
 1. In the gestures table add a row after the fist row:
-`| ✋ Open palm, draw a circle (with `--voice`) | **Start / stop voice input** in Claude Code |`
-2. Add a section after "Fine scroll follows your hand" titled **Voice input for Claude Code**, explaining: one circle starts, the next stops; it presses Claude Code's own push-to-talk key, so AirSwipe records no audio; it is off unless `--voice`; and the one-time setup:
+`| ✋ Open palm, draw a circle (with `--voice`) | **Start / stop voice dictation** in the message box you are focused on |`
+2. Add a section after "Fine scroll follows your hand" titled **Voice dictation**, explaining: one circle starts, the next stops; it presses the dictation shortcut, so AirSwipe records no audio and Apple's Dictation transcribes; it is off unless `--voice`; and the one-time setup:
 
 ```text
-1. In Claude Code run /voice tap
-2. Create ~/.claude/keybindings.json containing
-   { "bindings": [ { "context": "Chat", "bindings": { "meta+k": "voice:pushToTalk" } } ] }
-3. In Terminal.app turn on Settings > Profiles > Keyboard > "Use Option as Meta key"
-4. airswipe --live --voice
+1. System Settings > Keyboard > Dictation: turn Dictation on.
+2. Set its Shortcut to Customize... and press Control + Option + D.
+3. airswipe --live --voice     (from a shell that has Accessibility permission:
+   the Claude app's Terminal panel or Terminal.app)
+4. Click into the message box, arm with the palm, then draw a circle with the palm.
 ```
 
-3. Add `--voice` and `--voice-key` rows to the Options table, and a Known limits bullet: works only while a terminal running Claude Code is focused, needs a claude.ai login and microphone permission for that terminal app, and the 🎙 mark is an assumption that can drift if Claude Code stops by itself.
-4. Add troubleshooting rows: "The circle does nothing" (arm first, use an open palm, draw it within 1.5 s, at least 0.10 across, check `--debug` for `mode=openPalm`) and "The circle fires but Claude Code does not record" (check `/voice tap` is on, the keybinding chord matches `--voice-key`, Option is set as Meta, and Accessibility is allowed for the terminal app).
+   Then a short paragraph for Claude Code's command-line tool (untested): run `/voice tap`, bind `voice:pushToTalk` to a chord in `~/.claude/keybindings.json`, turn on Terminal.app's "Use Option as Meta key", and run `airswipe --live --voice-key meta+k`. It needs a claude.ai login and microphone permission for the terminal app, and audio goes to Anthropic.
+3. Add `--voice` and `--voice-key` rows to the Options table, and Known limits bullets: the key goes to whatever app is focused, so the message box must have focus; the press must come from a process with Accessibility permission (the assistant's own sandboxed shell has none); the 🎙 mark is an assumption that can drift if dictation stops by itself.
+4. Add troubleshooting rows: "The circle does nothing" (arm first, use an open palm, draw it within 1.5 s, at least 0.10 across, check `--debug` for `mode=openPalm`) and "The circle fires but dictation does not start or stop" (the Dictation shortcut must equal `--voice-key`; click into the message box first; Accessibility must be allowed for the app that runs AirSwipe; a second circle within 1 s is ignored).
 5. Update the test count in "Status" to the number `swift test` prints.
 
 - [ ] **Step 2: Spec**
 
-In `docs/superpowers/specs/2026-10-16-voice-circle-design.md`: change the status line to "implemented", add `backslash` / `\` to the chord key list in the Plumbing section (letters, digits, `space`, `\`, `f1` to `f20`), state the default chord chosen in Task 1, and link `docs/superpowers/spike-voice-key.md`.
+The spec was already updated after the spike (target, default chord `ctrl+opt+d`, the realistic key press, key list with `\`). In `docs/superpowers/specs/2026-10-16-voice-circle-design.md` only change the status line from "build not started" to "implemented", and note any starting values (`circle*` fields) that live testing changed.
 
 - [ ] **Step 3: Verify and commit**
 
@@ -1165,10 +1220,10 @@ git commit -m "docs: voice circle in the README, spec marked implemented"
 
 - [ ] **Step 4: Live test (with the user)**
 
-Ask the user to run, in Terminal.app, with `/voice tap` on and the keybinding in place:
+Ask the user to set the macOS Dictation shortcut to Control + Option + D, click into the Claude app's message box, then run (in the Terminal panel or Terminal.app, which have Accessibility permission):
 
 ```bash
 cd ~/Desktop/AirSwipe && swift run airswipe --live --voice --debug 2>&1 | tee debug.log
 ```
 
-Expected, in order: arm with the palm and see `armed`; draw a palm circle and see `voice: start recording (circle)`, the 🎙 mark in the menu bar, and Claude Code recording; speak; draw another circle and see `voice: stop recording (circle)` and the transcript in the prompt box. Then check the same circle drawn with one finger causes swipes and flicks only, never `voice:`. If circles are missed or fire by accident, tune `circleMinTurn`, `circleMinSize` and `circleWindow` from `debug.log` (the palm path is in the `x=` and `y=` fields), re-run `swift test`, and commit.
+Expected, in order: arm with the palm and see `armed`; draw a palm circle and see `voice: start recording (circle)`, the 🎙 mark in the menu bar, and the dictation microphone appear; speak; draw another circle and see `voice: stop recording (circle)`, dictation stop, and the text in the message box. (If the focus moved to the terminal when AirSwipe started, click back into the message box before circling.) Then check the same circle drawn with one finger causes swipes and flicks only, never `voice:`. If circles are missed or fire by accident, tune `circleMinTurn`, `circleMinSize` and `circleWindow` from `debug.log` (the palm path is in the `x=` and `y=` fields), re-run `swift test`, and commit.

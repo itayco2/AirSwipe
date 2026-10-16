@@ -1,41 +1,54 @@
 # AirSwipe — Voice Circle Design Spec
 
-**Date:** 2026-10-16 · **Status:** design approved in chat, spec awaiting review
+**Date:** 2026-10-16 · **Status:** approved; the key-press spike passed (`docs/superpowers/spike-voice-key.md`); build not started
 
 ## Goal
 
-Let a developer using Claude Code start and stop voice dictation by drawing a circle
-in the air, without touching the keyboard. AirSwipe does no audio itself: it presses
-Claude Code's own push-to-talk key, and Claude Code records, transcribes and puts the
-text in the prompt box.
+Let a developer who works with Claude start and stop voice dictation by drawing a circle
+in the air, without touching the keyboard. AirSwipe does no audio itself: it presses the
+key that toggles dictation, and something else records and transcribes. Two targets use
+the same code and differ only in the key and in who transcribes:
+
+- **macOS Dictation** (tested). Works in the Claude desktop app's message box and in
+  nearly any text field. Apple transcribes. This is the default.
+- **Claude Code's command-line `/voice tap`** (not tested). Works in a terminal running
+  Claude Code, and Claude transcribes. Select it with `--voice-key`.
 
 ## What the user does
 
 1. Run `airswipe --live --voice`. Arm as usual with a still open palm.
-2. Draw a circle in the air with the **open palm**, in either direction.
-3. AirSwipe presses the voice key once. The menu bar shows 🎙. Claude Code is now recording.
-4. Talk. Then draw another circle. AirSwipe presses the key again, Claude Code stops
-   and the transcript appears in its prompt box (Enter submits, unless `autoSubmit`).
+2. Click into the message box. Draw a circle in the air with the **open palm**, in either
+   direction.
+3. AirSwipe presses the dictation key once. The menu bar shows 🎙. Dictation is now
+   listening.
+4. Talk. Then draw another circle. AirSwipe presses the key again, dictation stops and the
+   text appears in the box.
 
 ## Decisions
 
-1. **Claude Code does the recording.** The official docs describe `/voice` (push to
-   talk with `Space`), `/voice tap` (press once to start, once to stop and send) and a
-   rebindable action `voice:pushToTalk` in the `Chat` context of
-   `~/.claude/keybindings.json`. There is no documented API, flag or hook to start or
-   stop recording from outside, so the only way in is to press the key. This keeps
-   AirSwipe free of audio code, microphone permission and speech models.
-2. **Toggle, not hold.** One circle starts, the next stops. Claude Code's *tap* mode
-   starts on a single key press, which a synthetic event can deliver. Its *hold* mode
-   detects "held" by watching for rapid key-repeat events from the terminal, which a
-   single synthetic press does not produce, so hold-while-hand-up is left out for now.
+1. **Something else does the recording.** The official docs describe no API, flag or hook
+   to start or stop recording from outside, so the only way in is to press a key. This
+   keeps AirSwipe free of audio code, microphone permission and speech models.
+   The desktop app's Code tab has a microphone button but no keyboard shortcut for it,
+   and a `voice:pushToTalk` binding has no effect there (anthropics/claude-code#59400),
+   so for the app the key is the macOS Dictation shortcut.
+2. **Toggle, not hold.** One circle starts, the next stops. macOS Dictation and Claude
+   Code's tap mode both start and stop on the same single press, which a synthetic event
+   can deliver. Claude Code's hold mode detects "held" by watching for rapid key-repeat
+   events, which a single press does not produce, so hold-while-hand-up is left out.
 3. **The circle is drawn with an open palm.** A circle contains sideways and vertical
    movement of 0.10 or more, so drawn with one finger it would also switch screens and
    scroll. In palm mode the engine already ignores movement (strokes only count in
    one-finger mode), so a palm circle collides with nothing and nothing has to be
    suppressed. Two fingers was rejected because it scrolls the page.
 4. **Off by default.** `--voice` turns it on, because it presses a key into whatever
-   app is focused. `--voice-key <chord>` sets the chord, for example `meta+k`.
+   app is focused. `--voice-key <chord>` sets the chord (default `ctrl+opt+d`) and
+   implies `--voice`.
+5. **The press must look like a real keystroke.** The spike showed that a bare
+   key-down/key-up with flags on the key event starts dictation but does not stop it.
+   Pressing Control and Option as their own key events, holding the key about 100 ms and
+   then releasing everything both started and stopped it. The press therefore does that,
+   on a background queue so the hold never blocks the camera thread.
 
 ## Detecting the circle
 
@@ -49,9 +62,9 @@ other gesture. All numbers are starting values, to be tuned from real-camera log
   frame's aspect ratio (`circleAspectRatio`, 0.75 for the 640×480 capture) so a round
   motion is round in the maths.
 - It is a circle when, over that window: the path turns through at least
-  `circleMinTurn` (about 320°) in **one** direction, summing signed angle changes
-  around the path's centre; its extent is at least `circleMinSize` (0.10) across and
-  down; and its radius stays within a factor of two (`circleMinRoundness` 0.5), so a
+  `circleMinTurn` (5.5 radians, about 315°) in **one** direction, summing signed angle
+  changes around the path's centre; its extent is at least `circleMinSize` (0.10) across
+  and down; and its radius stays within a factor of two (`circleMinRoundness` 0.5), so a
   straight line or a flat oval does not count.
 - A back-and-forth wave turns by about zero, and a figure of eight turns by +360° then
   -360°, so both cancel and neither counts. A palm held still, even with jitter, is far
@@ -62,43 +75,45 @@ other gesture. All numbers are starting values, to be tuned from real-camera log
 ## Plumbing
 
 - `ActionMapper`: `.circle` becomes a new `Action.toggleVoice`.
-- `CGEventSink` (live): posts the chord once (key down, key up) with the right modifier
-  flags. A small chord parser reads `ctrl`, `opt`/`alt`/`meta`, `cmd`, `shift` plus one
-  key (letter, digit, `space`, `f1`–`f20`).
-- `ConsoleSink` (dry run): prints "would start/stop voice recording".
+- `KeyChord` (pure, in the core): parses `ctrl`, `opt`/`alt`/`meta`, `cmd`, `shift` plus
+  one key (letter, digit, `space`, `\`, `f1`–`f20`) into a key code and modifiers.
+- `CGEventSink` (live): posts the chord as a realistic press (see decision 5).
+- `ConsoleSink` (dry run): prints "would press the voice key … to start or stop recording".
 - `StatusItemController`: a 🎙 mark next to `ON` while recording is assumed. AirSwipe
-  cannot see Claude Code's real state, so it assumes each circle flips it, and it resets
-  when AirSwipe disarms.
+  cannot see whether dictation is really running, so it assumes each circle flips it,
+  and it resets when AirSwipe disarms.
 - `main.swift`: `--voice` and `--voice-key`; `--help` and the README list them.
 
-## User setup (once, in Claude Code)
+## User setup (once)
 
-`/voice tap`, and bind `voice:pushToTalk` to the same chord AirSwipe presses:
+**Claude app and any text field (macOS Dictation):**
 
-```json
-{ "bindings": [ { "context": "Chat", "bindings": { "meta+k": "voice:pushToTalk" } } ] }
-```
+1. System Settings > Keyboard > Dictation: turn Dictation on.
+2. Set its **Shortcut** to **Customize…** and press **Control + Option + D**.
+3. Run `airswipe --live --voice` from a shell that has Accessibility permission (the
+   Claude app's Terminal panel or Terminal.app; allow it under System Settings > Privacy &
+   Security > Accessibility). Click into the message box before circling.
 
-Claude Code needs a claude.ai login (voice is unavailable with API keys, Bedrock,
-Vertex or Foundry), and macOS microphone permission for the terminal app. Audio goes to
-Anthropic for transcription.
+**Claude Code in a terminal (command-line tool, untested):** run `/voice tap`, bind
+`voice:pushToTalk` to a chord in `~/.claude/keybindings.json` (for example
+`{ "bindings": [ { "context": "Chat", "bindings": { "meta+k": "voice:pushToTalk" } } ] }`),
+turn on Terminal.app's "Use Option as Meta key", and run `airswipe --live --voice-key meta+k`.
+That route needs a claude.ai login and microphone permission for the terminal app, and
+audio goes to Anthropic for transcription.
 
 ## Build order
 
-1. **Spike (a nod, then throwaway code).** A small script posts a chord to a terminal
-   where Claude Code is in `/voice tap` mode. Does recording start, and which chord
-   reaches Claude Code reliably? Candidates: `meta+k` (the docs' example, needs "Option as
-   Meta" in the terminal), `ctrl+\`, an F-key such as `f13`. If no synthetic chord
-   works, stop and revisit this design before writing more.
-2. Engine: `circle` detection, test-first.
-3. Mapper, sinks, status item, flags.
-4. README and this spec, then a live test.
+1. **Spike: done.** See `docs/superpowers/spike-voice-key.md`.
+2. `KeyChord`, test-first.
+3. Engine: `circle` detection, test-first.
+4. Engine wiring, mapper, sinks, status item, flags.
+5. README, then a live test with the camera.
 
 ## Tests
 
 - Circle: fires for a clockwise and a counter-clockwise palm circle, at several sizes
-  from 0.10 to 0.4 and speeds that finish within the window; fires once, not twice, for
-  one circle; fires again after the cooldown.
+  and speeds that finish within the window; fires once, not twice, for one circle; fires
+  again after the cooldown.
 - Does not fire: a half circle, a straight line, a back-and-forth wave, a figure of
   eight, a small wobble, a slow drift (a circle that takes longer than the window), a
   still palm with jitter, any one-finger or two-finger motion, and anything while not
@@ -106,16 +121,21 @@ Anthropic for transcription.
 - One-finger swipes and flicks are unchanged, and a palm circle emits no swipe, flick or
   scroll.
 - Mapper: `.circle` gives `[.toggleVoice]`. Chord parser: valid and invalid chords.
+- The realistic key press is verified by hand (the spike method), not by unit tests.
 
 ## Known limits
 
-- It works only while a terminal running Claude Code is focused, with `/voice tap` on.
-- The Claude desktop app's Code tab is not covered by the voice docs.
-- The 🎙 mark can be wrong if Claude Code stops by itself (15 s of silence, or 2 minutes);
-  the next circle simply starts a new recording.
-- A synthetic key press may behave differently from a real one; the spike decides.
+- It presses a key into whatever app is focused, so the message box must be focused when
+  you circle.
+- The key press must come from a process with Accessibility permission. The assistant's
+  own sandboxed shell has none; the Claude app's Terminal panel and Terminal.app work.
+- The 🎙 mark is an assumption and can be wrong if dictation stops by itself; the next
+  circle then starts a new session.
+- macOS Dictation is Apple's transcription, not Claude's. The command-line route uses
+  Claude's but works only in a terminal.
 
 ## Non-goals
 
 AirSwipe doing its own recording or transcription, press-and-hold-while-the-hand-is-up,
-reading Claude Code's recording state, and any platform other than macOS.
+reading the real dictation state, clicking the app's microphone button, and any platform
+other than macOS.
