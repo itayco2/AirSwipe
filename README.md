@@ -29,7 +29,7 @@ The interesting part of this project is deciding what a hand is *doing* from a n
 
 - **A pure state machine.** `GestureEngine` takes timestamped hand samples and returns
   events. It never reads a clock or touches the camera, so false positives, the hard
-  part of gesture control, are tested with synthetic hand paths (174 tests,
+  part of gesture control, are tested with synthetic hand paths (173 tests,
   Swift Testing) and by replaying recorded camera logs.
 - **Poses from finger straightness.** A finger is extended or curled by how straight
   its own joints are, which needs no wrist (out of view when a hand rests above a
@@ -158,7 +158,7 @@ Sources/AirSwipeCore/    pure logic, no camera or AppKit, fully unit-tested
   ActionMapper, KeyChord events to actions; key chord parsing
 Sources/airswipe/        camera, Vision, CGEvent, menu bar, accessibility
   CameraSource, HandTracker, Sinks, StatusItem, ClaudePromptFocus, main
-Tests/AirSwipeCoreTests  174 tests
+Tests/AirSwipeCoreTests  173 tests
 docs/superpowers/        design specs, plans and the key-press spike
 ```
 
