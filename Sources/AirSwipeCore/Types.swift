@@ -181,5 +181,25 @@ public struct GestureConfig: Equatable {
     /// Gaps between samples longer than this are clamped when integrating scroll.
     public var maxSampleGap: Double = 0.1
 
+    // Circle: an open palm drawing a circle starts and stops voice dictation. Off
+    // unless `circleEnabled`, so nothing changes for anyone who does not ask for it.
+    public var circleEnabled: Bool = false
+    /// The circle must be completed within this many seconds.
+    public var circleWindow: Double = 1.5
+    /// The path must turn through at least this many radians in one direction. 5.5 is
+    /// about 315 degrees; a person rarely closes the loop exactly.
+    public var circleMinTurn: Double = 5.5
+    /// The path must span at least this much across and down, in frame widths, so a hand
+    /// at rest and small tremors never count.
+    public var circleMinSize: Double = 0.10
+    /// The nearest point may be no closer to the centre than this share of the farthest,
+    /// so a line, a flat oval or a figure of eight does not count.
+    public var circleMinRoundness: Double = 0.5
+    /// After a circle, ignore further circles for this long.
+    public var circleCooldown: Double = 1.0
+    /// Frame height divided by frame width (480 / 640). Heights are scaled by it so a
+    /// round motion is round in the maths.
+    public var circleAspectRatio: Double = 0.75
+
     public init() {}
 }
