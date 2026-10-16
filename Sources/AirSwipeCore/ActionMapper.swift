@@ -8,10 +8,6 @@ public enum Action: Equatable {
     case forward
     /// Scroll by whole pixels. Positive scrolls toward the top of the page.
     case scroll(pixels: Int32)
-    /// Scroll about one screen toward the top of the page.
-    case pageUp
-    /// Scroll about one screen toward the bottom of the page.
-    case pageDown
 }
 
 /// Translates gesture events into actions.
@@ -39,11 +35,10 @@ public final class ActionMapper {
         case .swipe(.left):
             return [.forward]
 
-        case .flick(.up):
-            return [.pageUp]
-
-        case .flick(.down):
-            return [.pageDown]
+        case .flick:
+            // Only says a flick began. The page is moved by the `.scroll` events that
+            // follow the hand, so this must not scroll a second time.
+            return []
 
         case .scroll(let amount):
             pendingPixels += amount * maxScrollPixelsPerSecond

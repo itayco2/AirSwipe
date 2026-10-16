@@ -102,6 +102,9 @@ public struct GestureConfig: Equatable {
     // Disarming
     /// How long a fist must be held to stop the engine.
     public var fistDisarmDuration: Double = 0.5
+    /// The fist must also stay within this distance while it is held. Low in the
+    /// frame a moving hand often reads as a fist for a moment; a real stop is still.
+    public var fistStillnessRadius: Double = 0.06
     public var handLostDisarmDuration: Double = 1.0
     public var idleDisarmDuration: Double = 15.0
 
@@ -128,6 +131,14 @@ public struct GestureConfig: Equatable {
     public var flickMinDistance: Double = 0.08
     public var flickHomeRadius: Double = 0.05
     public var flickSettleRadius: Double = 0.06
+    /// How much page a flick scrolls per unit of hand travel, in full-speed-seconds
+    /// per frame height (the same unit as `scrollFollowGain`). The page follows the
+    /// hand while it keeps going the way it flicked, so a move of 0.2 of the picture
+    /// scrolls 0.4 full-speed-seconds: about half a screen at 1200 px/s.
+    public var flickScrollGain: Double = 2.0
+    /// After a flick the page follows the hand until it backs off this far from its
+    /// farthest point. Smaller slips are tremor and are ignored.
+    public var flickFollowReversal: Double = 0.015
 
     // Return guard: after a swipe the hand comes back toward where it started, and
     // that return must not swipe the other way. Swipes are held off until the hand

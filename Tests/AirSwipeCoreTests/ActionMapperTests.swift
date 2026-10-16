@@ -58,10 +58,12 @@ struct ActionMapperTests {
         #expect(mapper.actions(for: .scroll(amount: 0.0004)).isEmpty)
     }
 
-    @Test("a flick up pages up and a flick down pages down")
-    func flicksArePages() {
+    // The scroll that moves the page comes as `.scroll` events that follow the hand;
+    // the flick event only says a stroke began, so it must not scroll a second time.
+    @Test("a flick event does nothing by itself, the scroll that follows moves the page")
+    func flickEventIsOnlyAMarker() {
         let mapper = ActionMapper()
-        #expect(mapper.actions(for: .flick(.up)) == [.pageUp])
-        #expect(mapper.actions(for: .flick(.down)) == [.pageDown])
+        #expect(mapper.actions(for: .flick(.up)).isEmpty)
+        #expect(mapper.actions(for: .flick(.down)).isEmpty)
     }
 }

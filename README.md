@@ -9,9 +9,9 @@ the built-in camera and Apple's Vision framework, and everything runs on-device.
 |---|---|
 | ✋ Open palm, held still ~0.5 s | **Start.** Menu-bar icon shows `ON` |
 | ☝️ One finger, move **right / left** | **Switch screen**, like a 3- or 4-finger trackpad swipe between full-screen apps and desktops (`Ctrl+←/→`) |
-| ☝️ One finger, flick **up / down** | **Scroll about a screen** up or down |
+| ☝️ One finger, flick **up / down** | **Scroll:** the page follows your hand, so the farther you flick the more it scrolls |
 | ✌️ Two fingers, move your hand up / down | **Fine scroll:** the page follows your hand |
-| ✊ Fist, held ~0.5 s (or hand out of view) | **Stop** |
+| ✊ Fist, held still ~0.5 s (or hand out of view) | **Stop** |
 
 Swipe **right** to go to the screen on the **left**, and swipe **left** to go to
 the screen on the **right**, exactly as on the trackpad: your hand pushes the
@@ -19,21 +19,23 @@ current screen away and the next one slides in. Chrome and your other app need t
 be on different screens (full-screen apps or separate desktops) for this to have
 an effect. Prefer back/forward inside one app? Run with `--history`.
 
-**Flick to scroll.** With the same one finger, a quick move up scrolls about a
-screen toward the top and a quick move down scrolls about a screen toward the
-bottom. Each flick is one step, so there is nothing to hold. For a long page,
-flick again. A diagonal move is neither a swipe nor a flick.
-
-**You can bounce.** Flick up, then carry on down past the middle in one motion,
-and the move down counts as a flick down; the same goes for left and right. A
-move back that simply *stops at the middle* (or overshoots it a little) is a
-return and is ignored. Up and down need less distance than left and right, since
-a hand held low has little room below it.
+**Flick to scroll.** With the same one finger, a quick move up starts scrolling
+toward the top of the page and a quick move down toward the bottom. The page then
+follows your hand for as long as it keeps going that way, so the distance scrolled
+is how far you moved: a short flick scrolls a little and a long one scrolls a lot.
+Stop moving and it stops. A diagonal move is neither a swipe nor a flick. How much
+page you get per hand distance is `flickScrollGain`.
 
 **The return never counts.** After a swipe or a flick, your hand has to come back
-before anything else registers, and the move back is ignored. Your hand can come
-back and go straight into the next stroke with no pause. The guard also lifts if
-you rest anywhere for about 1.5 s, or after 3 s, so it can't get stuck.
+before anything else registers, and the move back is ignored, however far it goes.
+For up and down that means: flick, bring your hand back to the middle, and the next
+flick works straight away, with no pause needed. (There is no "bounce" up and down:
+a hand returning to the middle overshoots it by nearly as much as a deliberate
+flick needs, so the way back can't be told from a new flick.) Sideways, a move that
+carries on a full stroke *past* the middle still counts as a swipe the other way.
+The guard also lifts if you rest anywhere for about 1.5 s, or after 3 s, so it
+can't get stuck. Up and down need less distance than left and right, since a hand
+held low has little room below it.
 
 The pose decides what a movement means, so gestures can't be confused: strokes
 only count in the one-finger pose and fine scrolling only in the two-finger pose.
@@ -55,11 +57,12 @@ the hand.
 
 ## Status
 
-- **Gesture logic** (`AirSwipeCore`): built test-first, 104 passing tests.
+- **Gesture logic** (`AirSwipeCore`): built test-first, 116 passing tests.
 - **Camera layer** (`airswipe`): run on a real camera over several sessions, and
-  the thresholds were set from those logs. Live swipes were confirmed working.
-  Flicks are new and untested on a camera, so treat their feel (distance, screen
-  fraction) as tunable.
+  the thresholds were set from those logs. Live swipes and flicks were tried and
+  look good. The scroll that follows a flick, and the still-fist stop, are newer
+  and tuned only from replaying recorded logs, so treat their feel (`flickScrollGain`,
+  `fistStillnessRadius`) as tunable.
 
 ## Requirements
 
@@ -92,12 +95,14 @@ goes to whatever is under the mouse pointer, so rest it over the page.
    to **your right**. Expect `swipe right`, then `would move to the screen on the
    LEFT`. Bring your hand back to the middle: **nothing should fire**. Then swipe
    left: `swipe left`, then `would move to the screen on the RIGHT`.
-5. Still with one finger, flick your hand **up**. Expect `flick up`, then `would
-   scroll a screen UP`. Bring it back: nothing. Flick **down**: `flick down`, then
-   `would scroll a screen DOWN`.
+5. Still with one finger, flick your hand **up** a short way, then bring it back to
+   the middle. Expect `flick up` and `would scroll UP` with a few hundred pixels,
+   and nothing on the way back. Flick **up** again, farther: it scrolls more. Then
+   flick **down**: `flick down`, `would scroll DOWN`.
 6. Optional: show **two fingers** and move your hand up and down for fine scroll.
 7. Go back to an open palm and move around. Nothing should happen.
-8. Make a fist for about half a second. Expect `disarmed (fist held)`.
+8. Hold a fist **still** for about half a second. Expect `disarmed (fist held)`. A
+   fist that is moving does not stop it.
 9. If something is off, run with `--debug` and look at `mode=` and `pose=`: they
    should read `oneFinger` / `twoFingers` for the pose you are showing.
 
@@ -120,9 +125,11 @@ goes to whatever is under the mouse pointer, so rest it over the page.
 | Swipe right moves to the wrong side | `--no-mirror` |
 | Swiping does nothing to Chrome or your other app | They must be on different screens (full-screen apps or desktops). Check that *Move left/right a space* is on in Mission Control keyboard shortcuts |
 | Flick up scrolls the wrong way | `--invert-scroll` |
-| A flick scrolls too far or too little | `pageFraction` in `CGEventSink` (default 0.8 of the screen height) |
+| A flick scrolls too far or too little | `flickScrollGain` in `GestureConfig` (default 2.0: a move of 0.2 of the picture scrolls about half a screen) |
+| A flick scrolls and then the page stops too soon, or keeps going on your way back | `flickFollowReversal` (default 0.015): how far the hand may slip back before the flick counts as over |
+| It stops when you didn't mean to | A fist must be held still: `fistStillnessRadius` (default 0.06) and `fistDisarmDuration` (0.5 s) |
 | Swipes are missed | Lower `swipeMinDistance` (default 0.12 of the frame) or raise `swipeWindow` |
-| Flicks are missed, or a flick down does not register | Lower `flickMinDistance` (default 0.08 of the frame). Hold your hand a little higher in the picture so there is room to move down. Flick up, then *carry on* down past the middle |
+| Flicks are missed, or a flick down does not register | Lower `flickMinDistance` (default 0.08 of the frame). Hold your hand a little higher in the picture so there is room to move down. After a flick, bring your hand back to the middle before the next one |
 | A flick up or down is missed, or comes out the wrong way | Run with `--debug` and make the move. A `REJECTED` tail names the cause: `mode is …` (the pose was not one finger for long enough), `held by return guard` (the hand had not come back, or the carry-on was too short), `held by cooldown`, or `too far off the axis`. Also check `y=`: a hand resting near 0 has no room to move down |
 | Diagonal moves fire when they shouldn't, or are ignored when they should count | `swipeMaxVerticalRatio` (how far off-axis a stroke may drift, default 0.6) |
 | It never arms | Hold the palm flat and still, face the camera, add light |

@@ -13,9 +13,9 @@ built-in camera: the trackpad's swipe and scroll, without touching it.
 |---|---|
 | Open palm held still ≈0.5 s | **Start.** Arms the app. The menu-bar icon changes. |
 | One finger (index), fast horizontal move | **Switches screens**, like the trackpad's 3- or 4-finger swipe between full-screen apps and desktops: hand moves right → screen on the left (`ctrl+←`), hand moves left → screen on the right (`ctrl+→`). `--history` maps to browser back/forward (`Cmd+[` / `Cmd+]`) instead. |
-| One finger (index), fast vertical move | **Flick:** scrolls about a screen (80% of the screen height, eased over ~0.15 s). Up moves toward the top of the page. A diagonal move is neither a swipe nor a flick. |
+| One finger (index), fast vertical move | **Flick:** scrolls, and the page then follows the hand for as long as it keeps going that way (`flickScrollGain`, default 2.0 full-speed-seconds per frame height), so the distance scrolled is the distance the hand moved. Up moves toward the top of the page. The move back scrolls nothing. A diagonal move is neither a swipe nor a flick. |
 | Two fingers (index and middle), hand moving up or down | **Fine scroll:** the page follows the hand and stops when it does. `--rate-scroll` restores the earlier model where height above or below the pose's start sets speed. |
-| Fist held ≥0.5 s, hand out of frame ≥1 s, or ~15 s with no gesture | **Stop.** Disarms. Re-arm by holding an open palm again. |
+| Fist held still ≥0.5 s, hand out of frame ≥1 s, or ~15 s with no gesture | **Stop.** Disarms. Re-arm by holding an open palm again. A fist that is moving (more than `fistStillnessRadius`, 0.06) does not count. |
 
 The number of fingers is the command. A pose only becomes the mode once it has
 been steady for 0.15 s, an in-between pose does nothing and never disarms, and
@@ -36,6 +36,19 @@ through the engine: readings of `other` or `fist` leave one-finger mode alone
 finger no longer decides between one finger and two, since a little finger that
 read as extended caused 13 of the 41 unclear frames. Replaying the same log, the
 engine went from 4 flicks up and none down to a plausible mix of both.
+
+**Up and down have no carry-on, and a flick scrolls with the hand.** Live use
+reported three things: a return to the middle sometimes fired another flick, the
+scroll was a fixed jump rather than "actual scroll", and the app sometimes
+disarmed because a moving hand looked closed. Replaying the recorded log showed
+returns overshooting the middle by 0.03 to 0.07, right under the 0.08 that
+counted as a deliberate "carry on" the other way, so the exception was removed
+for up and down (sideways keeps it, since it works): the way back is ignored
+however far it goes. The fixed 80%-of-a-screen jump was replaced by following the
+hand: the flick scrolls the distance already covered at once, then keeps scrolling
+by how much farther the hand goes the same way, and ends once the hand backs off
+more than `flickFollowReversal` (0.015). The stop gesture now needs the fist held
+still, as arming needs the palm held still.
 
 A **return guard** keeps the hand's return stroke from swiping back: after a
 swipe, further swipes are held off until the hand has settled near the swipe's

@@ -35,9 +35,10 @@ GESTURES (the number of fingers is the command)
   One finger, move right / left             switch screen: like a 3- or 4-finger
                                             trackpad swipe between full-screen apps
                                             and desktops
-  One finger, flick up / down               scroll about a screen
+  One finger, flick up / down               scroll: the page follows your hand, so the
+                                            farther you flick the more it scrolls
   Two fingers, move your hand up / down     fine scroll: the page follows your hand
-  Fist, held for half a second              STOP
+  Fist, held still for half a second        STOP
 """
 
 func parseOptions(_ arguments: [String]) -> Options {
