@@ -58,7 +58,7 @@ public enum HandPoseClassifier {
             // A fist, unless the thumb sticks straight up: then it is a thumbs up. They
             // must be told apart because a held fist stops AirSwipe and a held thumbs up
             // sends. A thumb that is folded, bent, sideways, down or unseen stays a fist.
-            return isThumbUp(thumb) ? .thumbsUp : .fist
+            return isThumbUp(thumb) && curledTightly(fingers) ? .thumbsUp : .fist
         // The little finger does not decide between one finger and two. It is short,
         // often hidden behind the others, and often left sticking out: in a real run
         // it alone turned a clear one-finger hand into `.other` about a third of the
@@ -72,17 +72,32 @@ public enum HandPoseClassifier {
         }
     }
 
-    /// How straight the thumb must be to count as extended. The thumb curves a little
-    /// even when held out, so this is looser than the fingers' 0.92. Starting values:
-    /// tune from `--debug`, which prints the thumb's straightness and direction.
-    static let thumbExtendedStraightness = 0.90
+    /// How straight the thumb must be to count as pointing out. Measured on one user
+    /// (dry run, 2026-10-16): a deliberate thumbs up read 0.96 to 1.00, while a relaxed
+    /// fist with the thumb loosely up read 0.90 to 0.95, so the line sits between them.
+    /// Tune from `--debug`, which prints the thumb's straightness and direction.
+    static let thumbExtendedStraightness = 0.95
 
-    /// How far from straight up the thumb may lean, as the cosine of the angle: 0.7 is
-    /// about 45 degrees.
-    static let thumbUpCosine = 0.7
+    /// How far from straight up the thumb may lean, as the cosine of the angle: 0.8 is
+    /// about 37 degrees. Deliberate thumbs up read 0.95 to 0.99 (under 20 degrees).
+    static let thumbUpCosine = 0.8
+
+    /// A thumbs up squeezes the other four fingers tightly to hold the thumb up, while a
+    /// relaxed fist leaves them looser. The average straightness of the four fingers
+    /// must be at or below this. Measured on one user: thumbs up held about 0.2 (rarely
+    /// above 0.4), relaxed fist 0.64 to 0.74. This is the main guard against a fist
+    /// being read as a thumbs up, which would send a message by accident.
+    static let thumbsUpFingerStraightness = 0.50
+
+    /// True when all four fingers are seen and curl tightly on average.
+    private static func curledTightly(_ fingers: [[CGPoint]]) -> Bool {
+        let values = fingers.compactMap { straightness(of: $0) }
+        guard values.count == fingers.count, !values.isEmpty else { return false }
+        return values.reduce(0, +) / Double(values.count) <= thumbsUpFingerStraightness
+    }
 
     /// The thumb chain runs base (CMC) to tip. It is "up" when it is straight and its
-    /// base-to-tip direction is within about 45 degrees of vertical (y grows upward).
+    /// base-to-tip direction is within about 37 degrees of vertical (y grows upward).
     /// An unseen thumb (empty chain) is never up.
     public static func isThumbUp(_ thumb: [CGPoint]) -> Bool {
         guard let base = thumb.first, let tip = thumb.last, thumb.count >= 2,

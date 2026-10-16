@@ -160,10 +160,20 @@ Added after the circle worked end to end, to close the loop: circle, talk, send.
   over a fast palm swipe up (which a circle's upward arc could set off) and a push toward
   the camera (the least reliable signal).
 - **Pose:** `HandPose.thumbsUp` is a fist (all four fingers curled) whose thumb is
-  straight (`thumbExtendedStraightness`, 0.90) and points within about 45 degrees of
-  straight up (`thumbUpCosine`, 0.7). A thumbs up used to read as a fist, and a held fist
-  stops AirSwipe, so the two had to be separated: a thumbs up never disarms, a fist
-  (thumb tucked, bent, sideways, down or unseen) still does.
+  straight (`thumbExtendedStraightness`, 0.95) and points within about 37 degrees of
+  straight up (`thumbUpCosine`, 0.8), and whose four fingers are curled *tightly*:
+  their average straightness is at most `thumbsUpFingerStraightness` (0.50). A thumbs up
+  used to read as a fist, and a held fist stops AirSwipe, so the two had to be separated:
+  a thumbs up never disarms, a fist (thumb tucked, bent, sideways, down, unseen, or the
+  fingers only loosely curled) still does.
+- **Why the fingers are checked too (dry run, 2026-10-16, one user):** the first thresholds
+  (thumb 0.90 straight, 0.7 up) read the user's relaxed fist as a thumbs up for about half
+  a second, because it leaves the thumb loosely pointing up (0.90 to 0.95 straight, 0.89 to
+  0.96 up), overlapping a deliberate thumbs up (0.96 to 1.00, 0.95 to 0.99). The fingers
+  separated them cleanly: average straightness about 0.2 in 63 thumbs-up frames (a few
+  transition frames up to 0.5), 0.64 to 0.74 in the relaxed fist. The cost is that the
+  thumbs up must be given with the fingers squeezed, which is the safe direction: a
+  missed send can be repeated, a wrong one cannot be undone.
 - **Hold:** fires once per hold and again only after the thumb comes down; the hand must
   stay within `sendStillnessRadius` (0.06); a reading of `other` or `fist` in the middle
   of the hold is forgiven for `sendGrace` (0.25 s), because the thumb is the joint set the

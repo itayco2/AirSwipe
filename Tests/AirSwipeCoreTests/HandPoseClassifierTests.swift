@@ -175,11 +175,34 @@ struct HandPoseClassifierTests {
         #expect(pose("cccc", thumb: straightThumb(degrees: 0)) == .thumbsUp)
     }
 
-    @Test("a thumb leaning up to about 40 degrees still counts")
+    @Test("a thumb leaning up to about 30 degrees still counts, but not much further")
     func leaningThumbsUp() {
         #expect(pose("cccc", thumb: straightThumb(degrees: 30)) == .thumbsUp)
         #expect(pose("cccc", thumb: straightThumb(degrees: -30)) == .thumbsUp)
-        #expect(pose("cccc", thumb: straightThumb(degrees: 40)) == .thumbsUp)
+        #expect(pose("cccc", thumb: straightThumb(degrees: 45)) == .fist)
+    }
+
+    // Field evidence (dry run, 2026-10-16): the user's relaxed fist left the thumb loosely
+    // pointing up (thumb straightness 0.90 to 0.95, up 0.89 to 0.96), so it read as a thumbs
+    // up for half a second. A fist is how you stop; a thumbs up sends. What told them apart
+    // was the fingers: tightly curled (straightness 0.04 to 0.4) in a real thumbs up,
+    // looser (0.5 to 0.77) in the relaxed fist.
+    private func looselyCurled(_ x: Double) -> [CGPoint] {
+        [CGPoint(x: x, y: 0.30), CGPoint(x: x, y: 0.35),
+         CGPoint(x: x + 0.02, y: 0.38), CGPoint(x: x + 0.05, y: 0.36)]
+    }
+
+    @Test("a relaxed fist with the thumb loosely up is a fist, not a thumbs up")
+    func relaxedFistIsAFist() {
+        let loose = knuckleX.map(looselyCurled)
+        #expect(HandPoseClassifier.classify(fingers: loose, thumb: straightThumb(degrees: 0)) == .fist)
+    }
+
+    @Test("a thumb that is nearly but not quite straight is a fist")
+    func almostStraightThumb() {
+        let almost = [CGPoint(x: 0.40, y: 0.28), CGPoint(x: 0.40, y: 0.32),
+                      CGPoint(x: 0.42, y: 0.355), CGPoint(x: 0.45, y: 0.38)]
+        #expect(pose("cccc", thumb: almost) == .fist)
     }
 
     @Test("a straight thumb pointing sideways or down is still just a fist")
