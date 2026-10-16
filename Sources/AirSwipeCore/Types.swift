@@ -9,6 +9,8 @@ public enum HandPose: Equatable {
     case openPalm
     /// All four fingers curled. Held, it stops (disarms) the engine.
     case fist
+    /// A fist with the thumb straight and pointing up. Held still, it sends the message.
+    case thumbsUp
     /// Only the index finger extended. Swipe mode.
     case oneFinger
     /// Index and middle fingers extended. Scroll mode.
@@ -56,6 +58,8 @@ public enum GestureEvent: Equatable {
     case scroll(amount: Double)
     /// An open palm drew a circle in the air: toggle voice dictation.
     case circle
+    /// A thumbs up was held still: send the message.
+    case send
 }
 
 /// Why the engine stopped listening. Lets the app say what happened instead of
@@ -203,6 +207,17 @@ public struct GestureConfig: Equatable {
     /// Frame height divided by frame width (480 / 640). Heights are scaled by it so a
     /// round motion is round in the maths.
     public var circleAspectRatio: Double = 0.75
+
+    // Send: a thumbs up held still sends the message. Off unless `sendEnabled`, like the
+    // circle, so nothing changes for anyone who does not ask for voice.
+    public var sendEnabled: Bool = false
+    /// How long the thumbs up must be held.
+    public var sendHoldDuration: Double = 0.7
+    /// A reading of `other` or `fist` in the middle of the hold is forgiven for this long,
+    /// because the thumb is the joint set the camera reads least reliably.
+    public var sendGrace: Double = 0.25
+    /// The hand must stay within this distance while it holds the thumbs up.
+    public var sendStillnessRadius: Double = 0.06
 
     public init() {}
 }

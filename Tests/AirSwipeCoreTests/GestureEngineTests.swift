@@ -1232,3 +1232,102 @@ struct CircleEngineTests {
         #expect(events.contains(.disarmed))
     }
 }
+
+// MARK: - Send (thumbs up)
+
+@Suite("Send")
+struct SendTests {
+    private func sendConfig() -> GestureConfig {
+        var config = GestureConfig()
+        config.sendEnabled = true
+        return config
+    }
+
+    @Test("a thumbs up held still sends once")
+    func thumbsUpSends() {
+        var rig = Rig.armed(config: sendConfig())
+        let events = rig.hold(for: 1.2, pose: .thumbsUp)
+        #expect(events == [.send])
+    }
+
+    @Test("holding it longer still sends only once")
+    func sendsOncePerHold() {
+        var rig = Rig.armed(config: sendConfig())
+        let events = rig.hold(for: 4.0, pose: .thumbsUp)
+        #expect(events == [.send])
+    }
+
+    @Test("a thumbs up shown for less than the hold does not send")
+    func tooShort() {
+        var rig = Rig.armed(config: sendConfig())
+        #expect(rig.hold(for: 0.5, pose: .thumbsUp).isEmpty)
+    }
+
+    @Test("a moving thumbs up does not send")
+    func movingThumbsUp() {
+        var rig = Rig.armed(config: sendConfig())
+        let events = rig.move(toX: 0.9, toY: 0.5, over: 1.5, pose: .thumbsUp)
+        #expect(events.isEmpty)
+    }
+
+    @Test("lowering the thumb and raising it again sends again")
+    func sendsAgainAfterRelease() {
+        var rig = Rig.armed(config: sendConfig())
+        var events = rig.hold(for: 1.0, pose: .thumbsUp)
+        events += rig.hold(for: 0.4)
+        events += rig.hold(for: 1.0, pose: .thumbsUp)
+        #expect(events == [.send, .send])
+    }
+
+    @Test("a brief flicker to an unclear pose in the middle of the hold is forgiven")
+    func flickerIsForgiven() {
+        var rig = Rig.armed(config: sendConfig())
+        var events = rig.hold(for: 0.3, pose: .thumbsUp)
+        events += rig.hold(for: 0.1, pose: .other)
+        events += rig.hold(for: 0.1, pose: .fist)
+        events += rig.hold(for: 0.5, pose: .thumbsUp)
+        #expect(events == [.send])
+    }
+
+    @Test("but a longer gap, or a clear different pose, ends the hold")
+    func longerGapEndsTheHold() {
+        var rig = Rig.armed(config: sendConfig())
+        var events = rig.hold(for: 0.4, pose: .thumbsUp)
+        events += rig.hold(for: 0.5, pose: .other)
+        events += rig.hold(for: 0.4, pose: .thumbsUp)
+        #expect(events.isEmpty)
+
+        var other = Rig.armed(config: sendConfig())
+        var more = other.hold(for: 0.4, pose: .thumbsUp)
+        more += other.hold(for: 0.1)
+        more += other.hold(for: 0.4, pose: .thumbsUp)
+        #expect(more.isEmpty)
+    }
+
+    @Test("a thumbs up never stops it, however long it is held")
+    func thumbsUpDoesNotDisarm() {
+        var rig = Rig.armed(config: sendConfig())
+        let events = rig.hold(for: 3.0, pose: .thumbsUp)
+        #expect(!events.contains(.disarmed))
+    }
+
+    @Test("a held fist still stops it, with send turned on")
+    func fistStillDisarms() {
+        var rig = Rig.armed(config: sendConfig())
+        let events = rig.hold(for: 0.8, pose: .fist)
+        #expect(events.contains(.disarmed))
+        #expect(!events.contains(.send))
+    }
+
+    @Test("send is off unless it is turned on")
+    func offByDefault() {
+        var rig = Rig.armed()
+        #expect(rig.hold(for: 1.5, pose: .thumbsUp).isEmpty)
+    }
+
+    @Test("a thumbs up while not armed does nothing")
+    func notArmed() {
+        var rig = Rig(config: sendConfig())
+        #expect(rig.hold(for: 1.5, pose: .thumbsUp).isEmpty)
+    }
+}

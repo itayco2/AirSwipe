@@ -12,6 +12,8 @@ public enum Action: Equatable {
     case startVoice
     /// Stop dictation: press the voice key again.
     case stopVoice
+    /// Send the message: focus the message box if needed, then press Return.
+    case sendMessage
 }
 
 /// Translates gesture events into actions.
@@ -52,6 +54,15 @@ public final class ActionMapper {
         case .circle:
             voiceActive.toggle()
             return [voiceActive ? .startVoice : .stopVoice]
+
+        case .send:
+            // Dictation still running has not finished typing; stop it first. The sink
+            // spaces the stop and the send apart so the text has landed.
+            if voiceActive {
+                voiceActive = false
+                return [.stopVoice, .sendMessage]
+            }
+            return [.sendMessage]
 
         case .scroll(let amount):
             pendingPixels += amount * maxScrollPixelsPerSecond

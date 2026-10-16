@@ -152,6 +152,31 @@ audio goes to Anthropic for transcription.
 - Mapper: `.circle` gives `[.toggleVoice]`. Chord parser: valid and invalid chords.
 - The realistic key press is verified by hand (the spike method), not by unit tests.
 
+## Send (thumbs up)
+
+Added after the circle worked end to end, to close the loop: circle, talk, send.
+
+- **Gesture:** a thumbs up held still for `sendHoldDuration` (0.7 s). The user chose it
+  over a fast palm swipe up (which a circle's upward arc could set off) and a push toward
+  the camera (the least reliable signal).
+- **Pose:** `HandPose.thumbsUp` is a fist (all four fingers curled) whose thumb is
+  straight (`thumbExtendedStraightness`, 0.90) and points within about 45 degrees of
+  straight up (`thumbUpCosine`, 0.7). A thumbs up used to read as a fist, and a held fist
+  stops AirSwipe, so the two had to be separated: a thumbs up never disarms, a fist
+  (thumb tucked, bent, sideways, down or unseen) still does.
+- **Hold:** fires once per hold and again only after the thumb comes down; the hand must
+  stay within `sendStillnessRadius` (0.06); a reading of `other` or `fist` in the middle
+  of the hold is forgiven for `sendGrace` (0.25 s), because the thumb is the joint set the
+  camera reads least reliably, while any other clear pose ends the hold at once.
+- **Effect:** `ActionMapper` turns `.send` into `[.sendMessage]`, or
+  `[.stopVoice, .sendMessage]` if dictation was running. The sink waits until 0.8 s after
+  the stop for the text to land, focuses the Claude message box (unless
+  `--voice-target frontmost`), and presses Return as a realistic keypress.
+- **On with** `--voice`; the thumb's straightness and direction appear in `--debug` as
+  `thumb=straightness/up`. The thresholds are starting values to tune from a real capture.
+- **Risk:** an accidental send submits whatever is in the box. A misread fist as a thumbs
+  up is the way that could happen, hence the strict straight-and-up test.
+
 ## Known limits
 
 - The automatic focus relies on the Claude app labelling its message box "Prompt" in the

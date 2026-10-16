@@ -47,6 +47,10 @@ final class ConsoleSink: ActionSink {
                   : "  -> would press the voice key (\(voiceKey)) to start dictation")
         case .stopVoice:
             print("  -> would press the voice key (\(voiceKey)) to stop dictation")
+        case .sendMessage:
+            print(focusClaude
+                  ? "  -> would focus the Claude message box, then press Return to send"
+                  : "  -> would press Return to send")
         }
     }
 
@@ -96,6 +100,8 @@ final class CGEventSink: ActionSink {
     private let promptFocus: ClaudePromptFocus?
     /// Serial, so two quick circles can never interleave their key events.
     private let voiceQueue = DispatchQueue(label: "airswipe.voice-key")
+    /// When dictation was last told to stop. Only touched on `voiceQueue`.
+    private var lastVoiceStop = Date.distantPast
 
     init(style: NavigationStyle, invertScroll: Bool, voiceChord: KeyChord?, focusClaude: Bool) {
         self.style = style
@@ -138,8 +144,12 @@ final class CGEventSink: ActionSink {
             }
         case .stopVoice:
             if let chord = voiceChord {
+                // Remember when, so a send that follows can wait for the text to land.
+                voiceQueue.async { self.lastVoiceStop = Date() }
                 postChord(chord)
             }
+        case .sendMessage:
+            sendMessage()
         }
     }
 
@@ -149,6 +159,28 @@ final class CGEventSink: ActionSink {
             let event = CGEvent(keyboardEventSource: source, virtualKey: code, keyDown: isDown)
             event?.flags = flags
             event?.post(tap: .cghidEventTap)
+        }
+    }
+
+    /// Sends the message. Dictation that was only just stopped needs a moment to finish
+    /// typing, so wait until `dictationSettle` has passed since the stop; then bring the
+    /// Claude message box into focus (when asked to) and press Return.
+    private func sendMessage() {
+        let dictationSettle = 0.8
+        voiceQueue.async {
+            let sinceStop = Date().timeIntervalSince(self.lastVoiceStop)
+            if sinceStop < dictationSettle {
+                Thread.sleep(forTimeInterval: dictationSettle - sinceStop)
+            }
+            if let promptFocus = self.promptFocus {
+                let outcome = promptFocus.focus()
+                if outcome.isFocused {
+                    Thread.sleep(forTimeInterval: 0.06)
+                } else {
+                    fputs("airswipe: \(outcome); pressing Return anyway\n", stderr)
+                }
+            }
+            self.postChord(KeyChord(keyCode: 0x24)) // Return
         }
     }
 

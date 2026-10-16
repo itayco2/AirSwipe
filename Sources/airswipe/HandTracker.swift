@@ -32,6 +32,9 @@ final class HandTracker {
         [.littleMCP, .littlePIP, .littleDIP, .littleTip],
     ]
 
+    /// The thumb, from its base out to the tip. Only used to tell a thumbs up from a fist.
+    private let thumbJoints: [Joint] = [.thumbCMC, .thumbMP, .thumbIP, .thumbTip]
+
     /// One line describing the latest frame: whether a hand was found, how
     /// straight each finger is, which pose that makes, and where the knuckles are.
     /// Only filled in when diagnostics are on.
@@ -84,10 +87,13 @@ final class HandTracker {
             let chain = joints.compactMap(point)
             return chain.count == joints.count ? chain : []
         }
-        let pose = HandPoseClassifier.classify(fingers: fingers)
+        let thumbChain = thumbJoints.compactMap(point)
+        let thumb = thumbChain.count == thumbJoints.count ? thumbChain : []
+        let pose = HandPoseClassifier.classify(fingers: fingers, thumb: thumb)
 
         if collectDiagnostics {
-            diagnostics = "hand=yes " + describe(observation, fingers: fingers, pose: pose, x: x, y: y)
+            diagnostics = "hand=yes " + describe(observation, fingers: fingers, thumb: thumb,
+                                                 pose: pose, x: x, y: y)
         }
         return HandSample(x: Double(x), y: Double(y), pose: pose)
     }
@@ -95,7 +101,8 @@ final class HandTracker {
     // MARK: - Diagnostics
 
     private func describe(_ observation: VNHumanHandPoseObservation,
-                          fingers: [[CGPoint]], pose: HandPose, x: CGFloat, y: CGFloat) -> String {
+                          fingers: [[CGPoint]], thumb: [CGPoint],
+                          pose: HandPose, x: CGFloat, y: CGFloat) -> String {
         func format(_ value: Double) -> String { String(format: "%.2f", value) }
 
         let straightness = fingers.map { chain -> String in
@@ -106,7 +113,17 @@ final class HandTracker {
             (try? observation.recognizedPoint(joints[3])).map { format(Double($0.confidence)) } ?? "--"
         }
 
-        return "pose=\(pose) str=\(straightness.joined(separator: "/")) "
+        // The thumb: how straight it is, then how far it points up (1 straight up, 0
+        // sideways, -1 down). A thumbs up needs both high: see HandPoseClassifier.
+        var thumbText = "--"
+        if let base = thumb.first, let tip = thumb.last,
+           let straight = HandPoseClassifier.straightness(of: thumb) {
+            let length = hypot(Double(tip.x - base.x), Double(tip.y - base.y))
+            let up = length > 0 ? Double(tip.y - base.y) / length : 0
+            thumbText = "\(format(straight))/\(format(up))"
+        }
+
+        return "pose=\(pose) str=\(straightness.joined(separator: "/")) thumb=\(thumbText) "
             + "tipConf=\(confidences.joined(separator: "/")) wrist=\(wrist) "
             + "x=\(format(Double(x))) y=\(format(Double(y)))"
     }

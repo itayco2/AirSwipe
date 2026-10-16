@@ -73,6 +73,20 @@ struct ActionMapperTests {
         #expect(mapper.actions(for: .circle) == [.startVoice])
     }
 
+    // Dictation needs a moment to finish typing after it stops, so a send that follows a
+    // running dictation asks for the stop first; the sink spaces the two out.
+    @Test("send presses send, and stops dictation first if it was running")
+    func sendStopsDictationFirst() {
+        let mapper = ActionMapper()
+        #expect(mapper.actions(for: .send) == [.sendMessage])
+
+        _ = mapper.actions(for: .circle)
+        #expect(mapper.voiceActive)
+        #expect(mapper.actions(for: .send) == [.stopVoice, .sendMessage])
+        #expect(mapper.voiceActive == false)
+        #expect(mapper.actions(for: .send) == [.sendMessage])
+    }
+
     @Test("arming or disarming forgets that voice was running")
     func voiceResetsWithTheEngine() {
         let mapper = ActionMapper()

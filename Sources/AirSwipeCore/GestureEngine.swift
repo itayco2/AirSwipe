@@ -94,6 +94,13 @@ public final class GestureEngine {
     private var fistAnchor: (x: Double, y: Double)?
     private var lostSince: TimeInterval?
 
+    // Armed: a thumbs up being held, which sends once per hold.
+    private var thumbSince: TimeInterval?
+    private var thumbAnchor: (x: Double, y: Double)?
+    private var lastThumbTime: TimeInterval = -.infinity
+    /// True once this hold has sent, until the thumb comes down.
+    private var thumbLatched = false
+
     /// Why the engine most recently disarmed, so the app can explain it.
     public private(set) var lastDisarmReason: DisarmReason?
 
@@ -197,6 +204,11 @@ public final class GestureEngine {
             return disarm(.fist)
         }
 
+        if let events = sendEvents(for: sample, at: time) {
+            lastActivity = time
+            return events
+        }
+
         updateMode(for: sample, at: time)
         updateReturnGuard(for: sample, at: time)
 
@@ -215,6 +227,38 @@ public final class GestureEngine {
             return disarm(.idle)
         }
         return []
+    }
+
+    /// A thumbs up held still for `sendHoldDuration` sends, once per hold: the thumb has
+    /// to come down before it can send again. A reading of `other` or `fist` in the
+    /// middle of a hold is forgiven for `sendGrace`, since the thumb is the joint set the
+    /// camera reads least reliably; any other clear pose ends the hold at once. Returns
+    /// nil when there is nothing to report.
+    private func sendEvents(for sample: HandSample, at time: TimeInterval) -> [GestureEvent]? {
+        guard config.sendEnabled else { return nil }
+
+        if sample.pose == .thumbsUp {
+            lastThumbTime = time
+            if let anchor = thumbAnchor, thumbSince != nil,
+               hypot(sample.x - anchor.x, sample.y - anchor.y) <= config.sendStillnessRadius {
+                // Still holding it: keep the clock running.
+            } else {
+                thumbSince = time
+                thumbAnchor = (sample.x, sample.y)
+            }
+            if !thumbLatched, let since = thumbSince, time - since >= config.sendHoldDuration {
+                thumbLatched = true
+                return [.send]
+            }
+            return nil
+        }
+
+        let unclear = sample.pose == .other || sample.pose == .fist
+        if unclear, time - lastThumbTime <= config.sendGrace { return nil }
+        thumbSince = nil
+        thumbAnchor = nil
+        thumbLatched = false
+        return nil
     }
 
     /// A pose becomes the mode only after it has been steady for
@@ -549,6 +593,9 @@ public final class GestureEngine {
         followY = nil
         follow = nil
         circle.reset()
+        thumbSince = nil
+        thumbAnchor = nil
+        thumbLatched = false
         lastRejection = nil
     }
 

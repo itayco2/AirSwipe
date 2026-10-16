@@ -39,6 +39,7 @@ public enum HandPoseClassifier {
     ///     that was not extended measured above 0.86. The gap between the two is
     ///     undecided, which keeps a half-bent finger from flickering between poses.
     public static func classify(fingers: [[CGPoint]],
+                                thumb: [CGPoint] = [],
                                 extendedStraightness: Double = 0.92,
                                 curledStraightness: Double = 0.88) -> HandPose {
         guard fingers.count == 4 else { return .other }
@@ -54,7 +55,10 @@ public enum HandPoseClassifier {
         case (.extended, .extended, .extended, .extended):
             return .openPalm
         case (.curled, .curled, .curled, .curled):
-            return .fist
+            // A fist, unless the thumb sticks straight up: then it is a thumbs up. They
+            // must be told apart because a held fist stops AirSwipe and a held thumbs up
+            // sends. A thumb that is folded, bent, sideways, down or unseen stays a fist.
+            return isThumbUp(thumb) ? .thumbsUp : .fist
         // The little finger does not decide between one finger and two. It is short,
         // often hidden behind the others, and often left sticking out: in a real run
         // it alone turned a clear one-finger hand into `.other` about a third of the
@@ -66,6 +70,29 @@ public enum HandPoseClassifier {
         default:
             return .other
         }
+    }
+
+    /// How straight the thumb must be to count as extended. The thumb curves a little
+    /// even when held out, so this is looser than the fingers' 0.92. Starting values:
+    /// tune from `--debug`, which prints the thumb's straightness and direction.
+    static let thumbExtendedStraightness = 0.90
+
+    /// How far from straight up the thumb may lean, as the cosine of the angle: 0.7 is
+    /// about 45 degrees.
+    static let thumbUpCosine = 0.7
+
+    /// The thumb chain runs base (CMC) to tip. It is "up" when it is straight and its
+    /// base-to-tip direction is within about 45 degrees of vertical (y grows upward).
+    /// An unseen thumb (empty chain) is never up.
+    public static func isThumbUp(_ thumb: [CGPoint]) -> Bool {
+        guard let base = thumb.first, let tip = thumb.last, thumb.count >= 2,
+              let straight = straightness(of: thumb), straight >= thumbExtendedStraightness else {
+            return false
+        }
+        let dx = Double(tip.x - base.x)
+        let dy = Double(tip.y - base.y)
+        let length = hypot(dx, dy)
+        return length > 0 && dy / length >= thumbUpCosine
     }
 
     private static func distance(_ a: CGPoint, _ b: CGPoint) -> Double {

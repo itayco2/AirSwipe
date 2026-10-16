@@ -62,6 +62,7 @@ GESTURES (the number of fingers is the command)
   Two fingers, move your hand up / down     fine scroll: the page follows your hand
   Fist, held still for half a second        STOP
   Open palm, draw a circle                  start / stop voice dictation (needs --voice)
+  Thumbs up, held still for 0.7 s           send the message (needs --voice)
 """
 
 func parseOptions(_ arguments: [String]) -> Options {
@@ -140,6 +141,7 @@ if options.rateScroll {
     gestureConfig.scrollMode = .rate
 }
 gestureConfig.circleEnabled = options.voice
+gestureConfig.sendEnabled = options.voice
 
 let engine = GestureEngine(config: gestureConfig)
 let mapper = ActionMapper()
@@ -244,6 +246,10 @@ let camera = CameraSource { pixelBuffer, time in
             let recording = mapper.voiceActive
             print("\(stamp(time))voice: \(recording ? "start" : "stop") dictation (circle)")
             DispatchQueue.main.async { status.setRecording(recording) }
+        case .send:
+            print("\(stamp(time))send: thumbs up held")
+            // Sending also stops dictation if it was running.
+            DispatchQueue.main.async { status.setRecording(false) }
         }
         for action in actions {
             sink.perform(action)

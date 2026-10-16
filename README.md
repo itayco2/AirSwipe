@@ -11,7 +11,8 @@ the built-in camera and Apple's Vision framework, and everything runs on-device.
 | ☝️ One finger, move **right / left** | **Switch screen**, like a 3- or 4-finger trackpad swipe between full-screen apps and desktops (`Ctrl+←/→`) |
 | ☝️ One finger, flick **up / down** | **Scroll:** the page follows your hand, so the farther you flick the more it scrolls |
 | ✌️ Two fingers, move your hand up / down | **Fine scroll:** the page follows your hand |
-| ✊ Fist, held still ~0.5 s (or hand out of view) | **Stop** |
+| ✊ Fist (thumb tucked), held still ~0.5 s (or hand out of view) | **Stop** |
+| 👍 Thumbs up, held still ~0.7 s (with `--voice`) | **Send the message:** stops dictation if it is running, focuses the Claude message box and presses Return |
 | ✋ Open palm, draw a **circle** (with `--voice`) | **Start / stop voice dictation** in the message box you are focused on |
 
 Swipe **right** to go to the screen on the **left**, and swipe **left** to go to
@@ -81,6 +82,15 @@ The key is pressed the way a real keyboard presses it (modifier keys as their ow
 events, the key held about 100 ms). A bare key-down and key-up starts Dictation but
 cannot stop it; see `docs/superpowers/spike-voice-key.md`.
 
+**Send.** Hold a thumbs up still for about 0.7 s and AirSwipe presses Return in the
+Claude message box, sending what you dictated. If dictation is still running it stops
+it first and waits for the text to land. That closes the loop: circle, talk, thumbs up.
+It fires once per hold (lower the thumb to send again), never stops AirSwipe (a held
+fist still does that), and is on with `--voice`. The camera reads the thumb less
+reliably than the fingers, so a short flicker in the middle of the hold is forgiven.
+A thumbs up is a fist with the thumb **straight and pointing up**; a tucked, bent or
+sideways thumb is still a fist. `--debug` prints `thumb=straightness/up` for tuning.
+
 For Claude Code's command-line tool (not tested yet), run `/voice tap`, bind
 `voice:pushToTalk` to a chord in `~/.claude/keybindings.json`, turn on Terminal.app's
 "Use Option as Meta key", and run `airswipe --live --voice-key meta+k`. That route
@@ -94,7 +104,7 @@ the hand.
 
 ## Status
 
-- **Gesture logic** (`AirSwipeCore`): built test-first, 159 passing tests.
+- **Gesture logic** (`AirSwipeCore`): built test-first, 177 passing tests.
 - **Camera layer** (`airswipe`): run on a real camera over several sessions, and
   the thresholds were set from those logs. Live swipes and flicks were tried and
   look good. The scroll that follows a flick, and the still-fist stop, are newer
@@ -176,6 +186,7 @@ goes to whatever is under the mouse pointer, so rest it over the page.
 | It never arms | Hold the palm flat and still, face the camera, add light |
 | The circle does nothing | Arm first, use an **open palm**, and draw it as one loop that comes back to where it started, within 2 s and at least 0.10 of the picture across and down. `--debug` should show `mode=openPalm` while you draw. Tune `circleMinTurn`, `circleMinSize`, `circleWindow` |
 | The circle fires but dictation does not start or stop | The macOS Dictation shortcut must equal `--voice-key`. Run `airswipe --focus-claude` to check the focusing step alone (it should print `focused the Claude message box`; if it cannot find the box, the app's interface may have changed, so use `--voice-target frontmost` and click the box yourself). The app running AirSwipe needs Accessibility permission. A second circle within 1 s is ignored (`circleCooldown`) |
+| The thumbs up does not send, or a fist sends | Run with `--debug` and look at `thumb=a/b`: `a` is how straight the thumb is and `b` how far it points up (1 straight up). A thumbs up needs `a` of 0.90 or more and `b` of 0.70 or more (`HandPoseClassifier.thumbExtendedStraightness`, `thumbUpCosine`), and all four fingers curled. Hold it still for 0.7 s (`sendHoldDuration`) |
 | A figure of eight fires once | Its first loop is a round loop, and a detector that decides as the hand moves cannot know a second loop follows |
 | One or two fingers are not recognized | `--debug`: `str=` is each finger's straightness. Extended fingers read about 0.98 to 1.00 and curled ones 0.9 or less. Curl the other fingers tighter, or tune `extendedStraightness` / `curledStraightness` in `HandPoseClassifier` |
 | It switches modes too slowly or too eagerly | `poseStableDuration` in `GestureConfig`. `strokePoseHold` (default 1 s) is how long one-finger mode survives with no one-finger reading |

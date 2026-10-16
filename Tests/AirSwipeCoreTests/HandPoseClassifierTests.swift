@@ -140,4 +140,73 @@ struct HandPoseClassifierTests {
         }
         #expect(HandPoseClassifier.classify(fingers: sideways) == .twoFingers)
     }
+
+    // MARK: - Thumbs up
+    //
+    // A thumbs up is a fist with the thumb straight and pointing up. Without telling the
+    // two apart it would read as a fist, and a held fist stops AirSwipe.
+
+    private let thumbBase = CGPoint(x: 0.40, y: 0.28)
+
+    /// A straight thumb, joints 0.04 apart, pointing `degrees` away from straight up
+    /// (positive leans toward the right of the picture).
+    private func straightThumb(degrees: Double) -> [CGPoint] {
+        let angle = degrees * .pi / 180
+        return (0...3).map { joint in
+            let length = 0.04 * Double(joint)
+            return CGPoint(x: thumbBase.x + length * sin(angle), y: thumbBase.y + length * cos(angle))
+        }
+    }
+
+    /// A thumb folded across the palm: its joints double back on themselves.
+    private let foldedThumb = [CGPoint(x: 0.40, y: 0.28), CGPoint(x: 0.44, y: 0.31),
+                               CGPoint(x: 0.46, y: 0.28), CGPoint(x: 0.43, y: 0.27)]
+
+    /// A thumb bent partway, straightness about 0.81.
+    private let bentThumb = [CGPoint(x: 0.40, y: 0.28), CGPoint(x: 0.40, y: 0.33),
+                             CGPoint(x: 0.43, y: 0.37), CGPoint(x: 0.47, y: 0.37)]
+
+    private func pose(_ states: String, thumb: [CGPoint]) -> HandPose {
+        HandPoseClassifier.classify(fingers: hand(states), thumb: thumb)
+    }
+
+    @Test("a fist with the thumb straight and up is a thumbs up")
+    func thumbsUp() {
+        #expect(pose("cccc", thumb: straightThumb(degrees: 0)) == .thumbsUp)
+    }
+
+    @Test("a thumb leaning up to about 40 degrees still counts")
+    func leaningThumbsUp() {
+        #expect(pose("cccc", thumb: straightThumb(degrees: 30)) == .thumbsUp)
+        #expect(pose("cccc", thumb: straightThumb(degrees: -30)) == .thumbsUp)
+        #expect(pose("cccc", thumb: straightThumb(degrees: 40)) == .thumbsUp)
+    }
+
+    @Test("a straight thumb pointing sideways or down is still just a fist")
+    func thumbNotUpIsAFist() {
+        #expect(pose("cccc", thumb: straightThumb(degrees: 60)) == .fist)
+        #expect(pose("cccc", thumb: straightThumb(degrees: 90)) == .fist)
+        #expect(pose("cccc", thumb: straightThumb(degrees: 180)) == .fist)
+    }
+
+    @Test("a folded, bent or missing thumb is a fist, never a thumbs up")
+    func thumbNotStraightIsAFist() {
+        #expect(pose("cccc", thumb: foldedThumb) == .fist)
+        #expect(pose("cccc", thumb: bentThumb) == .fist)
+        #expect(pose("cccc", thumb: []) == .fist)
+    }
+
+    @Test("a fist read without any thumb information is a fist, as before")
+    func fistWithoutThumbArgument() {
+        #expect(HandPoseClassifier.classify(fingers: hand("cccc")) == .fist)
+    }
+
+    @Test("the thumb only matters when all four fingers are curled")
+    func thumbIgnoredOtherwise() {
+        let up = straightThumb(degrees: 0)
+        #expect(pose("eccc", thumb: up) == .oneFinger)
+        #expect(pose("eecc", thumb: up) == .twoFingers)
+        #expect(pose("eeee", thumb: up) == .openPalm)
+        #expect(pose("ccce", thumb: up) == .other)
+    }
 }
