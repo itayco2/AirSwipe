@@ -1,6 +1,6 @@
 # AirSwipe — Voice Circle Design Spec
 
-**Date:** 2026-10-16 · **Status:** approved; the key-press spike passed (`docs/superpowers/spike-voice-key.md`); build not started
+**Date:** 2026-10-16 · **Status:** implemented; the key-press spike passed (`docs/superpowers/spike-voice-key.md`); the live camera test is pending
 
 ## Goal
 
@@ -66,9 +66,15 @@ other gesture. All numbers are starting values, to be tuned from real-camera log
   changes around the path's centre; its extent is at least `circleMinSize` (0.10) across
   and down; and its radius stays within a factor of two (`circleMinRoundness` 0.5), so a
   straight line or a flat oval does not count.
-- A back-and-forth wave turns by about zero, and a figure of eight turns by +360° then
-  -360°, so both cancel and neither counts. A palm held still, even with jitter, is far
-  below the size threshold.
+- A back-and-forth wave turns by about zero and a straight or zigzag path is not round,
+  so neither counts. A palm held still, even with jitter, is far below the size
+  threshold.
+- **Known exception:** the first loop of a figure of eight is itself a round loop
+  (0.12 across, a full turn), and a detector that decides as the hand moves cannot know
+  a second, cancelling loop is coming, so it fires once when that loop closes. No
+  threshold can reject that lobe without also rejecting real circles. (An earlier draft
+  of this spec claimed a figure of eight would not count; building the detector showed
+  that was wrong.)
 - After a circle fires, the path is cleared and a `circleCooldown` (1 s) follows, so the
   tail of the motion cannot fire a second one.
 
@@ -114,10 +120,10 @@ audio goes to Anthropic for transcription.
 - Circle: fires for a clockwise and a counter-clockwise palm circle, at several sizes
   and speeds that finish within the window; fires once, not twice, for one circle; fires
   again after the cooldown.
-- Does not fire: a half circle, a straight line, a back-and-forth wave, a figure of
-  eight, a small wobble, a slow drift (a circle that takes longer than the window), a
-  still palm with jitter, any one-finger or two-finger motion, and anything while not
-  armed.
+- Does not fire: a half circle, a straight line, a back-and-forth wave (straight and
+  diagonal), a zigzag squiggle, a small wobble, a slow drift (a circle that takes longer
+  than the window), a still palm with jitter, any one-finger or two-finger motion, and
+  anything while not armed.
 - One-finger swipes and flicks are unchanged, and a palm circle emits no swipe, flick or
   scroll.
 - Mapper: `.circle` gives `[.toggleVoice]`. Chord parser: valid and invalid chords.

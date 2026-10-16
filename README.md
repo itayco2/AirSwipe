@@ -12,6 +12,7 @@ the built-in camera and Apple's Vision framework, and everything runs on-device.
 | ☝️ One finger, flick **up / down** | **Scroll:** the page follows your hand, so the farther you flick the more it scrolls |
 | ✌️ Two fingers, move your hand up / down | **Fine scroll:** the page follows your hand |
 | ✊ Fist, held still ~0.5 s (or hand out of view) | **Stop** |
+| ✋ Open palm, draw a **circle** (with `--voice`) | **Start / stop voice dictation** in the message box you are focused on |
 
 Swipe **right** to go to the screen on the **left**, and swipe **left** to go to
 the screen on the **right**, exactly as on the trackpad: your hand pushes the
@@ -50,6 +51,33 @@ about a second with nothing that looks like one finger.
 page scrolls up, move down and it scrolls down, hold still and it stops.
 (`--rate-scroll` restores the older model where hand height sets the speed.)
 
+**Voice dictation (`--voice`).** Draw a circle in the air with your **open palm**, in
+either direction, and AirSwipe presses your dictation shortcut: dictation starts.
+Talk, then draw another circle: dictation stops and the text lands in the message box
+you are focused on. AirSwipe records no audio itself; macOS Dictation does the
+listening and Apple does the transcribing. A palm is used because a circle drawn with
+one finger would also switch screens and scroll. It is off unless you pass `--voice`,
+because it presses a key into whatever app is in front.
+
+One-time setup:
+
+1. System Settings > Keyboard > Dictation: turn Dictation on.
+2. Set its **Shortcut** to **Customize…** and press **Control + Option + D**. (Any
+   other chord works if you pass the same one as `--voice-key`.)
+3. Run `airswipe --live --voice` from a shell that has Accessibility permission, such
+   as the Claude app's Terminal panel or Terminal.app. Click into the message box
+   before you circle.
+
+The key is pressed the way a real keyboard presses it (modifier keys as their own
+events, the key held about 100 ms). A bare key-down and key-up starts Dictation but
+cannot stop it; see `docs/superpowers/spike-voice-key.md`.
+
+For Claude Code's command-line tool (not tested yet), run `/voice tap`, bind
+`voice:pushToTalk` to a chord in `~/.claude/keybindings.json`, turn on Terminal.app's
+"Use Option as Meta key", and run `airswipe --live --voice-key meta+k`. That route
+needs a claude.ai login and microphone permission for the terminal app, and the audio
+goes to Anthropic.
+
 **It works with your hand held low.** Poses come from how *straight* each finger
 is, which needs only the finger's own joints. The wrist, which is out of view when
 a hand rests above the keyboard, isn't used, and neither is the size or angle of
@@ -57,7 +85,7 @@ the hand.
 
 ## Status
 
-- **Gesture logic** (`AirSwipeCore`): built test-first, 116 passing tests.
+- **Gesture logic** (`AirSwipeCore`): built test-first, 151 passing tests.
 - **Camera layer** (`airswipe`): run on a real camera over several sessions, and
   the thresholds were set from those logs. Live swipes and flicks were tried and
   look good. The scroll that follows a flick, and the still-fist stop, are newer
@@ -112,6 +140,8 @@ goes to whatever is under the mouse pointer, so rest it over the page.
 |---|---|
 | *(none)* | Dry run |
 | `--live` | Post real key and scroll events |
+| `--voice` | An open-palm circle starts and stops voice dictation by pressing its shortcut (default `ctrl+opt+d`) |
+| `--voice-key CHORD` | The chord to press, like `ctrl+opt+d` or `meta+k`. Implies `--voice` |
 | `--history` | Swipes go back/forward inside an app (`Cmd+[` / `Cmd+]`) instead of switching screens |
 | `--invert-scroll` | Flip the scroll direction (flicks and fine scroll) |
 | `--rate-scroll` | Fine scroll by hand height (speed) instead of following the hand |
@@ -133,6 +163,9 @@ goes to whatever is under the mouse pointer, so rest it over the page.
 | A flick up or down is missed, or comes out the wrong way | Run with `--debug` and make the move. A `REJECTED` tail names the cause: `mode is …` (the pose was not one finger for long enough), `held by return guard` (the hand had not come back, or the carry-on was too short), `held by cooldown`, or `too far off the axis`. Also check `y=`: a hand resting near 0 has no room to move down |
 | Diagonal moves fire when they shouldn't, or are ignored when they should count | `swipeMaxVerticalRatio` (how far off-axis a stroke may drift, default 0.6) |
 | It never arms | Hold the palm flat and still, face the camera, add light |
+| The circle does nothing | Arm first, use an **open palm**, and draw it within 1.5 s and at least 0.10 of the picture across and down. `--debug` should show `mode=openPalm` while you draw. Tune `circleMinTurn`, `circleMinSize`, `circleWindow` |
+| The circle fires but dictation does not start or stop | The macOS Dictation shortcut must equal `--voice-key`. Click into the message box first. The app running AirSwipe needs Accessibility permission. A second circle within 1 s is ignored (`circleCooldown`) |
+| A figure of eight fires once | Its first loop is a round loop, and a detector that decides as the hand moves cannot know a second loop follows |
 | One or two fingers are not recognized | `--debug`: `str=` is each finger's straightness. Extended fingers read about 0.98 to 1.00 and curled ones 0.9 or less. Curl the other fingers tighter, or tune `extendedStraightness` / `curledStraightness` in `HandPoseClassifier` |
 | It switches modes too slowly or too eagerly | `poseStableDuration` in `GestureConfig`. `strokePoseHold` (default 1 s) is how long one-finger mode survives with no one-finger reading |
 | Flicks work with your hand high but not low | The camera reads a hand at the bottom edge badly (the pose turns to `other` or `fist`, the hand can drop out). Hold it so your knuckles sit about mid-picture, with room to move down |
@@ -175,4 +208,9 @@ Design and plan: [`docs/superpowers/specs`](docs/superpowers/specs/2026-10-15-ai
 - It sends keyboard shortcuts and scroll events, not true trackpad gestures, so a
   swipe only does something where `Ctrl+←/→` (or `Cmd+[` / `Cmd+]` with
   `--history`) would.
+- Voice dictation presses a key into whatever app is in front, so the message box has
+  to be focused when you circle. The press must come from a process with Accessibility
+  permission (an assistant's own sandboxed shell has none). The 🎙 mark is an
+  assumption and can be wrong if dictation stops by itself; the next circle then
+  starts a new session.
 - Not packaged as an `.app`, not signed or notarized.
