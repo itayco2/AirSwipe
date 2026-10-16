@@ -25,11 +25,17 @@ public struct HandSample: Equatable {
     public var x: Double
     public var y: Double
     public var pose: HandPose
+    /// How close the thumb tip is to the index tip, as a share of the width of the
+    /// knuckles: about 0.1 when pinched, 1.3 or more with the hand open. Nil when the
+    /// camera cannot read both fingertips. Unlike `pose` it does not depend on the shape of
+    /// the other fingers, so it stays readable while the hand moves.
+    public var pinch: Double?
 
-    public init(x: Double, y: Double, pose: HandPose = .openPalm) {
+    public init(x: Double, y: Double, pose: HandPose = .openPalm, pinch: Double? = nil) {
         self.x = x
         self.y = y
         self.pose = pose
+        self.pinch = pinch
     }
 }
 
@@ -231,6 +237,28 @@ public struct GestureConfig: Equatable {
     public var sendGrace: Double = 0.25
     /// The hand must stay within this distance while it holds the thumbs up.
     public var sendStillnessRadius: Double = 0.06
+
+    // Pinch scroll: thumb and index fingertip touching is a finger on the glass. While
+    // pinched the page follows the hand up and down; opening the pinch lifts the finger, so
+    // the move back scrolls nothing. Measured on a real hand (2026-10-16): pinched 0.01 to
+    // 0.17 through drags with the other fingers open or curled; open palm and one finger
+    // 1.3 to 1.7; a relaxed fist 0.24 to 0.74; a thumbs up 0.54 to 0.74.
+    public var pinchEnabled: Bool = true
+    /// At or below this the fingertips count as touching.
+    public var pinchEngageRatio: Double = 0.18
+    /// At or above this they count as apart. Between the two, nothing changes, so a reading
+    /// that wobbles does not make the scroll stutter.
+    public var pinchReleaseRatio: Double = 0.35
+    /// The pinch must hold this long before it grabs, so a fingertip brushing past does not.
+    public var pinchEngageDuration: Double = 0.1
+    /// And be apart this long before it lets go, so one bad reading does not drop the page.
+    public var pinchReleaseDuration: Double = 0.15
+    /// A pinch the camera cannot read is kept for this long, then dropped.
+    public var pinchUnreadGrace: Double = 0.25
+    /// Page scrolled per unit of hand movement while pinched, in full-speed-seconds per
+    /// frame height (the same unit as `scrollFollowGain`). 3.0 means moving the hand 0.4 of
+    /// the picture scrolls about a screen at 1200 px/s.
+    public var pinchScrollGain: Double = 3.0
 
     public init() {}
 }

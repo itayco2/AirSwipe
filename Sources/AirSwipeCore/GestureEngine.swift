@@ -96,6 +96,9 @@ public final class GestureEngine {
     /// flick halfway through; a new rest elsewhere clears it.
     private var blockedOrigin: (x: Double, y: Double)?
 
+    // Armed: pinch scroll. Fingertips touching grab the page and the hand drags it.
+    private var pinchScroller: PinchScroller
+
     // Armed: signals that lead to disarming.
     private var lastActivity: TimeInterval = 0
     private var fistSince: TimeInterval?
@@ -123,13 +126,14 @@ public final class GestureEngine {
         self.config = config
         self.circle = CircleDetector(config: config)
         self.rest = RestTracker(config: config)
+        self.pinchScroller = PinchScroller(config: config)
     }
 
     /// One line describing the engine's internal state, for debugging.
     public var diagnostics: String {
         let guardText = awaitingReturn ? String(format: "ON(x=%.2f)", returnHome) : "off"
         return "mode=\(mode) guard=\(guardText) follow=\(follow == nil ? "off" : "ON") "
-            + "rest=\(rest.isAtRest ? "yes" : "no")"
+            + "rest=\(rest.isAtRest ? "yes" : "no") grab=\(pinchScroller.isEngaged ? "ON" : "off")"
     }
 
     /// Feed one frame. `sample` is nil when no hand is visible.
@@ -193,6 +197,30 @@ public final class GestureEngine {
             return time - since >= config.handLostDisarmDuration ? disarm(.handLost) : []
         }
         lostSince = nil
+
+        // A pinch comes first. Fingertips touching are a finger on the glass: while they are,
+        // the pose readings mean nothing (a pinch with curled fingers reads as a fist or a
+        // thumbs up) and neither does the hand's movement (it is the scroll, not a swipe).
+        let pinch = pinchScroller.update(pinch: sample.pinch, y: sample.y, at: time)
+        if pinch.isActive {
+            fistSince = nil
+            fistAnchor = nil
+            thumbSince = nil
+            thumbAnchor = nil
+            thumbLatched = false
+            window.removeAll()
+            rest.restart(x: sample.x, y: sample.y, at: time)
+            circle.reset()
+            follow = nil
+            lastRejection = nil
+            if pinch.isEngaged { lastActivity = time }
+            return pinch.scroll == 0 ? [] : [.scroll(amount: pinch.scroll)]
+        }
+        if pinch.released {
+            // Letting go moves the hand too. That move is not a swipe.
+            window.removeAll()
+            rest.restart(x: sample.x, y: sample.y, at: time)
+        }
 
         // A fist is the stop signal, and only a fist: a pose that is merely
         // in-between never disarms. It must persist, because fingers curl for a
@@ -622,6 +650,7 @@ public final class GestureEngine {
         circle.reset()
         rest.reset()
         blockedOrigin = nil
+        pinchScroller.reset()
         thumbSince = nil
         thumbAnchor = nil
         thumbLatched = false

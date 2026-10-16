@@ -9,7 +9,8 @@ the built-in camera and Apple's Vision framework, and everything runs on-device.
 |---|---|
 | ✋ Open palm, held still ~0.5 s | **Start.** Menu-bar icon shows `ON` |
 | ☝️ One finger, move **right / left** | **Switch screen**, like a 3- or 4-finger trackpad swipe between full-screen apps and desktops (`Ctrl+←/→`) |
-| ☝️ One finger, flick **up / down** | **Scroll:** the page follows your hand, so the farther you flick the more it scrolls |
+| 🤏 **Pinch** (thumb and index fingertip touching), move your hand up / down | **Scroll like on a phone:** the page follows your hand while you pinch; open the pinch to let go |
+| ☝️ One finger, flick **up / down** | **Scroll:** the page follows your hand, so the farther you flick the more it scrolls *(being replaced by the pinch)* |
 | ✌️ Two fingers, move your hand up / down | **Fine scroll:** the page follows your hand |
 | ✊ Fist (thumb tucked), held still ~0.5 s (or hand out of view) | **Stop** |
 | 👍 Thumbs up, held still ~0.7 s (with `--voice`) | **Send the message:** stops dictation if it is running, focuses the Claude message box and presses Return |
@@ -20,6 +21,20 @@ the screen on the **right**, exactly as on the trackpad: your hand pushes the
 current screen away and the next one slides in. Chrome and your other app need to
 be on different screens (full-screen apps or separate desktops) for this to have
 an effect. Prefer back/forward inside one app? Run with `--history`.
+
+**Pinch to scroll.** Touch your thumb and index fingertip together: that is a finger on
+the glass. While you pinch, the page follows your hand up and down, one to one, in both
+directions (`pinchScrollGain`: moving your hand 0.4 of the picture scrolls about a
+screen). Open the pinch and you have lifted the finger: moving your hand back scrolls
+nothing, and pinching again anywhere grabs the page again, like lifting a finger to
+scroll farther on a phone. It does not matter what your other fingers do: the pinch is
+measured as the distance between the two fingertips, not by finger shape, which the
+camera misreads while the hand moves. A pinch also takes priority over everything else
+while it lasts, so it can never read as a fist (stop), a thumbs up (send) or a swipe.
+`--invert-scroll` flips the direction. With `--debug`, `pinch=a/b` is the fingertip
+distance as a share of your knuckle width (`a`: about 0.1 pinched, 1.3 or more open) and
+the camera's confidence in the two fingertips (`b`), and `grab=ON` shows when the page is
+held.
 
 **Flick to scroll.** With the same one finger, a quick move up starts scrolling
 toward the top of the page and a quick move down toward the bottom. The page then
@@ -191,6 +206,10 @@ goes to whatever is under the mouse pointer, so rest it over the page.
 | The circle does nothing | Arm first, use an **open palm**, and draw it as one loop that comes back to where it started, within 2 s and at least 0.10 of the picture across and down. `--debug` should show `mode=openPalm` while you draw. Tune `circleMinTurn`, `circleMinSize`, `circleWindow` |
 | The circle fires but dictation does not start or stop | The macOS Dictation shortcut must equal `--voice-key`. Run `airswipe --focus-claude` to check the focusing step alone (it should print `focused the Claude message box`; if it cannot find the box, the app's interface may have changed, so use `--voice-target frontmost` and click the box yourself). The app running AirSwipe needs Accessibility permission. A second circle within 1 s is ignored (`circleCooldown`) |
 | The thumbs up does not send, or a fist sends | Run with `--debug` and look at `thumb=a/b`: `a` is how straight the thumb is and `b` how far it points up (1 straight up). A thumbs up needs `a` of 0.95 or more and `b` of 0.80 or more (`HandPoseClassifier.thumbExtendedStraightness`, `thumbUpCosine`), and all four fingers curled **tightly**: the average of the four `str=` values must be 0.50 or less (`thumbsUpFingerStraightness`), because a relaxed fist with the thumb loosely up reads about 0.65 to 0.75 there. Squeeze the fingers firmly when you give a thumbs up. Hold it still for 0.7 s (`sendHoldDuration`) |
+| The pinch does not grab the page | Run with `--debug`: `pinch=` should read 0.18 or less while your fingertips touch (`pinchEngageRatio`), held for 0.1 s, and the confidence after the slash should be 0.6 or more. Make sure the thumb tip and index tip both face the camera, and keep your hand out of the bottom edge of the picture |
+| The pinch will not let go, or scrolling stutters | It lets go at 0.35 or more for 0.15 s (`pinchReleaseRatio`, `pinchReleaseDuration`). Between 0.18 and 0.35 nothing changes, on purpose |
+| The page scrolls the wrong way, or too far | `--invert-scroll`, or `pinchScrollGain` (default 3.0) |
+| A fist scrolls instead of stopping | A fist read as a pinch (`pinch=` 0.18 or less while the fist is held; a real fist read 0.24 to 0.74). Lower `pinchEngageRatio` |
 | A figure of eight fires once | Its first loop is a round loop, and a detector that decides as the hand moves cannot know a second loop follows |
 | One or two fingers are not recognized | `--debug`: `str=` is each finger's straightness. Extended fingers read about 0.98 to 1.00 and curled ones 0.9 or less. Curl the other fingers tighter, or tune `extendedStraightness` / `curledStraightness` in `HandPoseClassifier` |
 | It switches modes too slowly or too eagerly | `poseStableDuration` in `GestureConfig`. `strokePoseHold` (default 1 s) is how long one-finger mode survives with no one-finger reading |

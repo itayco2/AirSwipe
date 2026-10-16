@@ -24,6 +24,10 @@ final class HandTracker {
     /// Joints below this confidence are treated as not seen.
     private let minimumConfidence: Float = 0.3
 
+    /// A pinch reading needs both fingertips read at least this well to be used. The real
+    /// capture's tips read 0.8 to 0.97 while pinched, dipping once to 0.68.
+    private let minimumPinchConfidence = 0.6
+
     // Index to little finger, each joint from the knuckle out to the tip.
     private let fingerJoints: [[Joint]] = [
         [.indexMCP, .indexPIP, .indexDIP, .indexTip],
@@ -91,18 +95,24 @@ final class HandTracker {
         let thumb = thumbChain.count == thumbJoints.count ? thumbChain : []
         let pose = HandPoseClassifier.classify(fingers: fingers, thumb: thumb)
 
+        // Pinch: only trusted when both fingertips are read well. Unlike the pose, it is a
+        // distance between two points, so it holds up while the hand moves.
+        let pinch = pinchReading(observation)
+
         if collectDiagnostics {
             diagnostics = "hand=yes " + describe(observation, fingers: fingers, thumb: thumb,
-                                                 pose: pose, x: x, y: y)
+                                                 pose: pose, pinch: pinch, x: x, y: y)
         }
-        return HandSample(x: Double(x), y: Double(y), pose: pose)
+        let trustedPinch = pinch.flatMap { $0.confidence >= minimumPinchConfidence ? $0.ratio : nil }
+        return HandSample(x: Double(x), y: Double(y), pose: pose, pinch: trustedPinch)
     }
 
     // MARK: - Diagnostics
 
     private func describe(_ observation: VNHumanHandPoseObservation,
                           fingers: [[CGPoint]], thumb: [CGPoint],
-                          pose: HandPose, x: CGFloat, y: CGFloat) -> String {
+                          pose: HandPose, pinch: (ratio: Double, confidence: Double)?,
+                          x: CGFloat, y: CGFloat) -> String {
         func format(_ value: Double) -> String { String(format: "%.2f", value) }
 
         let straightness = fingers.map { chain -> String in
@@ -124,7 +134,7 @@ final class HandTracker {
         }
 
         var pinchText = "--"
-        if let pinch = pinchReading(observation) {
+        if let pinch {
             pinchText = "\(format(pinch.ratio))/\(format(pinch.confidence))"
         }
 

@@ -50,6 +50,22 @@ by how much farther the hand goes the same way, and ends once the hand backs off
 more than `flickFollowReversal` (0.015). The stop gesture now needs the fist held
 still, as arming needs the palm held still.
 
+**Pinch to scroll (2026-10-16).** Two live captures showed the rest-gated flick was the
+wrong model: in the air there is no "finger up", so every move back was ambiguous, and one
+finger was read as one finger in only 52 to 66% of frames while the hand moved (80 to 87%
+when still). A third capture measured the distance from thumb tip to index tip as a share
+of the knuckle width (`HandSample.pinch`): 0.01 to 0.17 through whole pinched drags with
+the other fingers open or curled (tip confidence 0.8 to 0.97, once 0.68), 1.3 to 1.7 open,
+0.24 to 0.74 for a fist, 0.54 to 0.74 for a thumbs up. So scrolling became a phone-style
+drag: fingertips touching (at most 0.18 for 0.1 s; apart again at 0.35 or more for 0.15 s,
+with nothing changing in between) grab the page, the hand's height then scrolls it one to
+one (`pinchScrollGain`, smoothed, with a dead band), opening the pinch lifts the finger so
+the move back scrolls nothing, and pinching again grabs anew. `PinchScroller` holds this
+state; the engine checks it first in every armed frame, and while a pinch is on it leaves
+the frame alone (a pinch with curled fingers reads as a fist or a thumbs up, and the
+hand's movement is the scroll, not a swipe). The flick code stays until pinch scrolling
+has been tried live, then goes.
+
 **Flicks start from a rest (2026-10-16).** A debug capture showed up and down still
 mixing three ways: the return dipped below its start height and the rebound fired a
 flick (the position-based guard lifted at the trough), pose flicker shifted the hand's

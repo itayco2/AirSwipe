@@ -12,6 +12,8 @@ struct Rig {
     private(set) var y = 0.5
     /// The pose shown by `hold` and `move` unless one is passed explicitly.
     var pose: HandPose = .openPalm
+    /// The pinch reading sent with every frame (nil: the camera could not read it).
+    var pinch: Double?
 
     init(config: GestureConfig = GestureConfig()) {
         engine = GestureEngine(config: config)
@@ -37,7 +39,7 @@ struct Rig {
             x = startX + (toX - startX) * t
             y = startY + (toY - startY) * t
             time += 1 / fps
-            events += engine.process(HandSample(x: x, y: y, pose: shown), at: time)
+            events += engine.process(HandSample(x: x, y: y, pose: shown, pinch: pinch), at: time)
         }
         return events
     }
@@ -877,6 +879,214 @@ struct FlickTests {
         rig.hold(for: 0.5)
         let down = rig.move(toX: 0.5, toY: 0.21, over: 0.25)
         #expect(flicks(in: down) == [.flick(.down)])
+    }
+}
+
+// MARK: - Pinch scroll
+
+/// Thumb and index fingertip touching is a finger on the glass: the page follows the hand
+/// up and down, and opening the pinch lifts the finger, so the way back scrolls nothing.
+/// Field evidence (live captures, 2026-10-16): flicks from the finger's shape kept mixing
+/// up and down because there is no "finger up" in the air, and one finger was read as one
+/// finger in only 52 to 66% of frames while the hand moved. The pinch distance stayed
+/// 0.01 to 0.17 through whole drags, whatever the other fingers looked like.
+@Suite("Pinch scroll")
+struct PinchScrollTests {
+    private let gain = GestureConfig().pinchScrollGain
+    private let pinched = 0.08
+    private let apart = 1.5
+
+    private func total(_ events: [GestureEvent]) -> Double {
+        scrolls(in: events).reduce(0, +)
+    }
+
+    /// Armed, with the fingertips touching for long enough to have grabbed the page.
+    private func grabbed(config: GestureConfig = GestureConfig()) -> Rig {
+        var rig = Rig.armed(config: config)
+        rig.pinch = pinched
+        rig.hold(for: 0.3)
+        return rig
+    }
+
+    @Test("dragging a pinched hand up scrolls up by about the distance moved")
+    func dragUp() {
+        var rig = grabbed()
+        var events = rig.move(toX: 0.5, toY: 0.70, over: 0.6)
+        events += rig.hold(for: 0.3)
+        #expect(abs(total(events) - 0.20 * gain) < 0.06)
+        #expect(scrolls(in: events).allSatisfy { $0 >= 0 })
+    }
+
+    @Test("dragging a pinched hand down scrolls down")
+    func dragDown() {
+        var rig = grabbed()
+        var events = rig.move(toX: 0.5, toY: 0.30, over: 0.6)
+        events += rig.hold(for: 0.3)
+        #expect(abs(total(events) + 0.20 * gain) < 0.06)
+        #expect(scrolls(in: events).allSatisfy { $0 <= 0 })
+    }
+
+    @Test("a farther drag scrolls proportionally farther")
+    func proportional() {
+        var small = grabbed()
+        var smallEvents = small.move(toX: 0.5, toY: 0.60, over: 0.6)
+        smallEvents += small.hold(for: 0.3)
+        var big = grabbed()
+        var bigEvents = big.move(toX: 0.5, toY: 0.80, over: 0.6)
+        bigEvents += big.hold(for: 0.3)
+        #expect(abs(total(bigEvents) / total(smallEvents) - 3.0) < 0.4)
+    }
+
+    @Test("an open hand moving up and down scrolls nothing")
+    func openHandDoesNotScroll() {
+        var rig = Rig.armed()
+        rig.pinch = apart
+        rig.hold(for: 0.3)
+        let up = rig.move(toX: 0.5, toY: 0.70, over: 0.5)
+        let down = rig.move(toX: 0.5, toY: 0.30, over: 0.5)
+        #expect(scrolls(in: up).isEmpty)
+        #expect(scrolls(in: down).isEmpty)
+    }
+
+    @Test("opening the pinch lifts the finger, so the move back scrolls nothing")
+    func releaseLiftsTheFinger() {
+        var rig = grabbed()
+        rig.move(toX: 0.5, toY: 0.70, over: 0.6)
+        rig.pinch = apart
+        rig.hold(for: 0.3)
+        let back = rig.move(toX: 0.5, toY: 0.50, over: 0.6)
+        #expect(scrolls(in: back).isEmpty)
+    }
+
+    @Test("pinching again anywhere carries on, like lifting a finger to scroll farther")
+    func grabAgain() {
+        var rig = grabbed()
+        var events = rig.move(toX: 0.5, toY: 0.70, over: 0.6)
+        events += rig.hold(for: 0.3)
+        rig.pinch = apart
+        rig.hold(for: 0.3)
+        let back = rig.move(toX: 0.5, toY: 0.50, over: 0.6)
+        rig.hold(for: 0.2)
+        rig.pinch = pinched
+        rig.hold(for: 0.3)
+        var second = rig.move(toX: 0.5, toY: 0.70, over: 0.6)
+        second += rig.hold(for: 0.3)
+        #expect(scrolls(in: back).isEmpty)
+        #expect(abs(total(events) + total(second) - 0.40 * gain) < 0.12)
+    }
+
+    @Test("grabbing the page does not make it jump, wherever the hand is")
+    func noJumpOnGrab() {
+        var rig = Rig.armed()
+        rig.pinch = apart
+        rig.move(toX: 0.5, toY: 0.80, over: 0.5)
+        rig.hold(for: 0.3)
+        rig.pinch = pinched
+        let events = rig.hold(for: 0.6)
+        #expect(scrolls(in: events).isEmpty)
+    }
+
+    @Test("a reading between touching and apart changes nothing, so a wobble does not stutter")
+    func hysteresis() {
+        var open = Rig.armed()
+        open.pinch = 0.25
+        open.hold(for: 0.3)
+        let notGrabbed = open.move(toX: 0.5, toY: 0.70, over: 0.6)
+        #expect(scrolls(in: notGrabbed).isEmpty)
+
+        var held = grabbed()
+        held.pinch = 0.25
+        let kept = held.move(toX: 0.5, toY: 0.70, over: 0.6)
+        #expect(total(kept) > 0.5 * 0.20 * gain)
+    }
+
+    @Test("fingertips that only brush past do not grab the page")
+    func briefTouchDoesNotGrab() {
+        var rig = Rig.armed()
+        rig.pinch = pinched
+        rig.move(toX: rig.x, toY: rig.y, over: 1 / rig.fps)
+        rig.pinch = 0.25
+        let events = rig.move(toX: 0.5, toY: 0.70, over: 0.6)
+        #expect(scrolls(in: events).isEmpty)
+    }
+
+    @Test("a pinch the camera cannot read for a moment keeps its grip")
+    func unreadableMomentKeepsTheGrip() {
+        var rig = grabbed()
+        rig.pinch = nil
+        rig.hold(for: 0.1)
+        rig.pinch = pinched
+        var events = rig.move(toX: 0.5, toY: 0.70, over: 0.4)
+        events += rig.hold(for: 0.3)
+        #expect(abs(total(events) - 0.20 * gain) < 0.08)
+    }
+
+    @Test("it scrolls whatever the other fingers look like")
+    func anyPoseScrolls() {
+        for pose in [HandPose.other, .fist, .thumbsUp, .oneFinger, .openPalm] {
+            var rig = grabbed()
+            rig.pose = pose
+            var events = rig.move(toX: 0.5, toY: 0.70, over: 0.6)
+            events += rig.hold(for: 0.3)
+            #expect(total(events) > 0.5 * 0.20 * gain, "pose \(pose)")
+        }
+    }
+
+    @Test("a pinch with curled fingers reading as a fist does not stop the engine")
+    func pinchBeatsFist() {
+        var rig = grabbed()
+        rig.pose = .fist
+        let events = rig.hold(for: 1.0)
+        #expect(!events.contains(.disarmed))
+    }
+
+    @Test("nor does a pinch with curled fingers reading as a thumbs up send")
+    func pinchBeatsThumbsUp() {
+        var config = GestureConfig()
+        config.sendEnabled = true
+        var rig = grabbed(config: config)
+        rig.pose = .thumbsUp
+        let events = rig.hold(for: 1.5)
+        #expect(!events.contains(.send))
+    }
+
+    @Test("pinched sideways moves do not swipe")
+    func pinchedSidewaysDoesNotSwipe() {
+        var rig = Rig.swiping()
+        rig.pinch = pinched
+        rig.hold(for: 0.3)
+        let events = rig.move(toX: 0.80, toY: 0.5, over: 0.2)
+        #expect(swipes(in: events).isEmpty)
+    }
+
+    @Test("a swipe still works once the pinch is let go")
+    func swipeAfterRelease() {
+        var rig = Rig.swiping()
+        rig.pinch = pinched
+        rig.hold(for: 0.3)
+        rig.pinch = apart
+        rig.hold(for: 0.6)
+        let events = rig.move(toX: 0.80, toY: 0.5, over: 0.2)
+        #expect(swipes(in: events) == [.swipe(.right)])
+    }
+
+    @Test("nothing scrolls before the engine is armed")
+    func needsArming() {
+        var rig = Rig()
+        rig.pinch = pinched
+        rig.pose = .other
+        rig.hold(for: 0.3)
+        let events = rig.move(toX: 0.5, toY: 0.80, over: 0.6)
+        #expect(scrolls(in: events).isEmpty)
+    }
+
+    @Test("pinch scrolling can be turned off")
+    func canBeDisabled() {
+        var config = GestureConfig()
+        config.pinchEnabled = false
+        var rig = grabbed(config: config)
+        let events = rig.move(toX: 0.5, toY: 0.70, over: 0.6)
+        #expect(scrolls(in: events).isEmpty)
     }
 }
 
