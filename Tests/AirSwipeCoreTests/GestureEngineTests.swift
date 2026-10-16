@@ -435,8 +435,9 @@ struct ScrollTests {
     @Test("one finger does not scroll by height: held high, or drifting slowly, nothing moves")
     func oneFingerDoesNotScroll() {
         var rig = Rig.swiping()
-        // Rise slowly: a quick move up is a flick, which does scroll (see FlickScrollTests).
-        let rise = scrolls(in: rig.move(toX: 0.5, toY: 0.90, over: 3.0))
+        // Rise very slowly: a sweep that covers 0.08 within 0.8 s is a flick, which does
+        // scroll (see FlickScrollTests). This is 0.04 of the frame per second.
+        let rise = scrolls(in: rig.move(toX: 0.5, toY: 0.90, over: 10.0))
         let held = scrolls(in: rig.hold(for: 0.5))
         #expect(rise.isEmpty)
         #expect(held.isEmpty)
@@ -724,10 +725,10 @@ struct FlickTests {
         #expect(flicks(in: clean) == [.flick(.up)])
     }
 
-    @Test("a slow vertical drift is not a flick, but a quick move after a pause is")
+    @Test("a very slow vertical drift is not a flick, but a quick move after a pause is")
     func slowVerticalDriftIsNotAFlick() {
         var rig = Rig.swiping()
-        let drift = rig.move(toX: 0.5, toY: 0.85, over: 2.0)
+        let drift = rig.move(toX: 0.5, toY: 0.85, over: 8.0)
         #expect(flicks(in: drift).isEmpty)
         rig.hold(for: 0.3)
         let quick = rig.move(toX: 0.5, toY: 0.55, over: 0.25)
@@ -965,6 +966,18 @@ struct FlickRestTests {
         events += rig.hold(for: 1.2)
         events += rig.move(toX: 0.5, toY: 0.50, over: 0.25)
         #expect(flicks(in: events) == [.flick(.up), .flick(.down)])
+    }
+
+    @Test("a slow return does not turn into a flick once the reverse delay runs out")
+    func slowReturnStaysAReturn() {
+        var rig = Rig.swiping()
+        var events: [GestureEvent] = []
+        events += rig.move(toX: 0.5, toY: 0.72, over: 0.25)
+        events += rig.hold(for: 0.3)
+        // The return starts inside the 0.8 s delay (so it is turned down) and carries on
+        // for another 1.2 s, past the point where the delay runs out.
+        events += rig.move(toX: 0.5, toY: 0.20, over: 1.2)
+        #expect(flicks(in: events) == [.flick(.up)])
     }
 
     @Test("a flick from where a swipe left the hand works after a short rest")
@@ -1207,11 +1220,28 @@ struct FlickScrollTests {
         #expect(abs(total(events) - 0.15 * gain) < 0.002)
     }
 
-    @Test("a slow drift is not a flick, so it scrolls nothing")
+    @Test("a very slow drift is not a flick, so it scrolls nothing")
     func slowDriftDoesNotScroll() {
         var rig = Rig.swiping()
-        let drift = rig.move(toX: 0.5, toY: 0.85, over: 2.0)
+        let drift = rig.move(toX: 0.5, toY: 0.85, over: 8.0)
         #expect(scrolls(in: drift).isEmpty)
+    }
+
+    // Field evidence (live capture, 2026-10-16): deliberate sweeps took 0.6 to 0.8 s to
+    // cover the first 0.08, because they start slowly. They must count as flicks.
+    @Test("a deliberate slow sweep from a rest is a flick, and the page follows it")
+    func slowSweepIsAFlick() {
+        var rig = Rig.swiping()
+        let sweep = rig.move(toX: 0.5, toY: 0.20, over: 1.6)
+        #expect(flicksIn(sweep) == [.flick(.down)])
+        #expect(total(sweep) < 0)
+    }
+
+    private func flicksIn(_ events: [GestureEvent]) -> [GestureEvent] {
+        events.filter {
+            if case .flick = $0 { return true }
+            return false
+        }
     }
 
     @Test("the gain sets how much page a given movement scrolls")

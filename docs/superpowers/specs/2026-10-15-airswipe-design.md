@@ -58,8 +58,11 @@ flicks down ended at the bottom edge where the dip's return fired a flick up. Al
 three are moves that do not start from a rest, so the vertical return guard was
 replaced by `RestTracker`: a flick needs the hand within `flickRestRadius` (0.02) of
 one spot for `flickRestDuration` (0.2 s), and then `flickMinDistance` (0.08) of travel
-away from *that spot* within `flickMoveWindow` (0.25 s of leaving it, the old floor of
-about 0.2 of the frame per second). Measuring from the rest rather than as the swing
+away from *that spot* within `flickMoveWindow` (0.8 s of leaving it; the first live
+capture showed deliberate sweeps starting slowly and taking 0.6 to 0.8 s to cover 0.08,
+which the first value of 0.25 s rejected, so drifts slower than about 0.06 of the frame
+per second are what is ignored). A move turned down as the way back stays turned down
+until the hand rests again, so a slow return cannot become a flick once the delay runs out. Measuring from the rest rather than as the swing
 between the highest and lowest point in the window halves the apparent size of a
 symmetric pose-flicker shift. After a flick the opposite direction is ignored for
 `flickReverseDelay` (0.8 s), because pausing at the end of a flick and coming back is

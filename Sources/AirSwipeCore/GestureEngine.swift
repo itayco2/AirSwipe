@@ -91,6 +91,10 @@ public final class GestureEngine {
     private var lastFlickTime: TimeInterval = -.infinity
     /// +1 for up, -1 for down.
     private var lastFlickDirection = 1.0
+    /// The rest a move was turned down from as the way back. Moves from that same rest
+    /// stay turned down even after `flickReverseDelay`, so a slow return cannot become a
+    /// flick halfway through; a new rest elsewhere clears it.
+    private var blockedOrigin: (x: Double, y: Double)?
 
     // Armed: signals that lead to disarming.
     private var lastActivity: TimeInterval = 0
@@ -437,6 +441,7 @@ public final class GestureEngine {
         window.append((time, sample.x, sample.y))
         window.removeAll { time - $0.time > config.swipeWindow }
         rest.update(x: sample.x, y: sample.y, at: time)
+        if rest.origin == nil { blockedOrigin = nil }
 
         guard let lowX = window.min(by: { $0.x < $1.x }),
               let highX = window.max(by: { $0.x < $1.x }),
@@ -512,13 +517,16 @@ public final class GestureEngine {
         if axis == .vertical {
             // Not held by a pending swipe's return guard: a flick starts from a rest, which
             // a swipe's return is not.
-            if direction != lastFlickDirection, time - lastFlickTime < config.flickReverseDelay {
-                lastRejection = String(format: "%@ %.2f held: the way back from the flick %@ (ignored for %.2fs, %.2fs left)",
+            let origin = rest.origin
+            let alreadyBlocked = blockedOrigin.map { $0.x == origin?.x && $0.y == origin?.y } ?? false
+            if alreadyBlocked || (direction != lastFlickDirection && time - lastFlickTime < config.flickReverseDelay) {
+                blockedOrigin = origin
+                lastRejection = String(format: "%@ %.2f held: the way back from the flick %@ (ignored for %.2fs after it, and until the hand rests again)",
                                        name, travel, lastFlickDirection > 0 ? "up" : "down",
-                                       config.flickReverseDelay,
-                                       config.flickReverseDelay - (time - lastFlickTime))
+                                       config.flickReverseDelay)
                 return nil
             }
+            blockedOrigin = nil
             lastFlickTime = time
             lastFlickDirection = direction
             lastStrokeTime = time
@@ -613,6 +621,7 @@ public final class GestureEngine {
         follow = nil
         circle.reset()
         rest.reset()
+        blockedOrigin = nil
         thumbSince = nil
         thumbAnchor = nil
         thumbLatched = false

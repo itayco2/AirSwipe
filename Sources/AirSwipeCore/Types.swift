@@ -142,9 +142,11 @@ public struct GestureConfig: Equatable {
     /// pose flicker shifts the reading by 0.04 to 0.05, which breaks the rest.
     public var flickRestRadius: Double = 0.02
     /// The hand must be `flickMinDistance` from where it rested within this long of
-    /// leaving it, or it was drifting, not flicking. 0.25 s keeps the old floor of about
-    /// 0.2 of the frame per second.
-    public var flickMoveWindow: Double = 0.25
+    /// leaving it, or it was drifting, not flicking. A live capture showed deliberate
+    /// sweeps taking 0.6 to 0.8 s to cover 0.08 (they start slowly), which 0.25 s
+    /// rejected; 0.8 s accepts them and still ignores drifts slower than about 0.06 of the
+    /// frame per second.
+    public var flickMoveWindow: Double = 0.8
     /// After a flick, the opposite direction is ignored for this long. Pausing at the end
     /// of a flick and then coming back is the way back; after this long it is a new flick.
     public var flickReverseDelay: Double = 0.8
