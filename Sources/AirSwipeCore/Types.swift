@@ -45,20 +45,12 @@ public enum SwipeDirection: Equatable {
     case right
 }
 
-/// Direction of a vertical flick, from the user's point of view.
-public enum FlickDirection: Equatable {
-    case up
-    case down
-}
-
 /// What the engine reports back after each sample.
 public enum GestureEvent: Equatable {
     case armed
     case disarmed
     case swipe(SwipeDirection)
-    /// A quick vertical move in one-finger mode: scroll about a screen.
-    case flick(FlickDirection)
-    /// Continuous scroll. Positive means the hand is above the neutral height
+    /// Continuous scroll, from a pinch or from two fingers. Positive means the hand is above the neutral height
     /// (scroll toward the top of the page). The value is `rate * dt`, where rate is
     /// -1...1 and 1 is full speed, so the sink multiplies by its pixels-per-second.
     case scroll(amount: Double)
@@ -136,34 +128,6 @@ public struct GestureConfig: Equatable {
     /// stretch of motion, so the turnaround point is not lost.
     public var swipeSlowWindow: Double = 0.10
     public var swipeSlowSpeed: Double = 0.30
-
-    // Up and down (flick). There is less room to move vertically, especially with
-    // the hand held low in the frame, so the distance is smaller than the sideways one.
-    public var flickMinDistance: Double = 0.08
-    /// A flick starts from a rest: the hand must have stayed within `flickRestRadius`
-    /// of one spot for this long. The way back from a flick, the rebound after it and a
-    /// pose flicker all move a hand that is not resting, so none of them can be a flick.
-    public var flickRestDuration: Double = 0.2
-    /// How far the hand may drift and still count as resting. Tremor is about 0.01; a
-    /// pose flicker shifts the reading by 0.04 to 0.05, which breaks the rest.
-    public var flickRestRadius: Double = 0.02
-    /// The hand must be `flickMinDistance` from where it rested within this long of
-    /// leaving it, or it was drifting, not flicking. A live capture showed deliberate
-    /// sweeps taking 0.6 to 0.8 s to cover 0.08 (they start slowly), which 0.25 s
-    /// rejected; 0.8 s accepts them and still ignores drifts slower than about 0.06 of the
-    /// frame per second.
-    public var flickMoveWindow: Double = 0.8
-    /// After a flick, the opposite direction is ignored for this long. Pausing at the end
-    /// of a flick and then coming back is the way back; after this long it is a new flick.
-    public var flickReverseDelay: Double = 0.8
-    /// How much page a flick scrolls per unit of hand travel, in full-speed-seconds
-    /// per frame height (the same unit as `scrollFollowGain`). The page follows the
-    /// hand while it keeps going the way it flicked, so a move of 0.2 of the picture
-    /// scrolls 0.4 full-speed-seconds: about half a screen at 1200 px/s.
-    public var flickScrollGain: Double = 2.0
-    /// After a flick the page follows the hand until it backs off this far from its
-    /// farthest point. Smaller slips are tremor and are ignored.
-    public var flickFollowReversal: Double = 0.015
 
     // Return guard: after a swipe the hand comes back toward where it started, and
     // that return must not swipe the other way. Swipes are held off until the hand

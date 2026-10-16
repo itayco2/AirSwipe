@@ -59,8 +59,6 @@ GESTURES (the number of fingers is the command)
                                             and desktops
   Pinch (thumb + index tips), move up/down  scroll like on a phone: the page follows your
                                             hand while you pinch; open the pinch to let go
-  One finger, flick up / down               scroll: the page follows your hand, so the
-                                            farther you flick the more it scrolls
   Two fingers, move your hand up / down     fine scroll: the page follows your hand
   Fist, held still for half a second        STOP
   Open palm, draw a circle                  start / stop voice dictation (needs --voice)
@@ -240,8 +238,6 @@ let camera = CameraSource { pixelBuffer, time in
             DispatchQueue.main.async { status.setArmed(false) }
         case .swipe(let direction):
             print("\(stamp(time))swipe \(direction == .right ? "right" : "left")")
-        case .flick(let direction):
-            print("\(stamp(time))flick \(direction == .up ? "up" : "down")")
         case .scroll:
             break
         case .circle:

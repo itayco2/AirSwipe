@@ -46,11 +46,6 @@ public final class ActionMapper {
         case .swipe(.left):
             return [.forward]
 
-        case .flick:
-            // Only says a flick began. The page is moved by the `.scroll` events that
-            // follow the hand, so this must not scroll a second time.
-            return []
-
         case .circle:
             voiceActive.toggle()
             return [voiceActive ? .startVoice : .stopVoice]

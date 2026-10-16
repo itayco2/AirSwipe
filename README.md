@@ -1,134 +1,59 @@
 # AirSwipe
 
-Switch screens and scroll on your Mac by moving your hand in the air. It uses only
-the built-in camera and Apple's Vision framework, and everything runs on-device.
+Control your Mac by moving your hand in the air: switch screens, scroll like on a
+phone, and drive voice dictation, using only the built-in camera. Hand tracking is
+Apple's Vision framework, everything runs on-device, and no frame is ever stored.
 
-**The number of fingers is the command, and one finger does most of it.**
+Written in Swift for macOS. No dependencies beyond Apple's frameworks, and the
+Xcode Command Line Tools are enough to build it.
+
+## What it does
 
 | You show | It does |
 |---|---|
-| ✋ Open palm, held still ~0.5 s | **Start.** Menu-bar icon shows `ON` |
-| ☝️ One finger, move **right / left** | **Switch screen**, like a 3- or 4-finger trackpad swipe between full-screen apps and desktops (`Ctrl+←/→`) |
+| ✋ Open palm, held still ~0.5 s | **Start.** The menu-bar icon shows `ON` |
 | 🤏 **Pinch** (thumb and index fingertip touching), move your hand up / down | **Scroll like on a phone:** the page follows your hand while you pinch; open the pinch to let go |
-| ☝️ One finger, flick **up / down** | **Scroll:** the page follows your hand, so the farther you flick the more it scrolls *(being replaced by the pinch)* |
+| ☝️ One finger, move **right / left** | **Switch screen**, like a 3- or 4-finger trackpad swipe between full-screen apps and desktops (`Ctrl+←/→`) |
 | ✌️ Two fingers, move your hand up / down | **Fine scroll:** the page follows your hand |
-| ✊ Fist (thumb tucked), held still ~0.5 s (or hand out of view) | **Stop** |
-| 👍 Thumbs up, held still ~0.7 s (with `--voice`) | **Send the message:** stops dictation if it is running, focuses the Claude message box and presses Return |
-| ✋ Open palm, draw a **circle** (with `--voice`) | **Start / stop voice dictation** in the message box you are focused on |
+| ✊ Fist, held still ~0.5 s (or hand out of view) | **Stop** |
+| ✋ Open palm, draw a **circle** *(with `--voice`)* | **Start / stop voice dictation** in the Claude message box |
+| 👍 Thumbs up, held still ~0.7 s *(with `--voice`)* | **Send the message** (stops dictation first if it is running) |
 
-Swipe **right** to go to the screen on the **left**, and swipe **left** to go to
-the screen on the **right**, exactly as on the trackpad: your hand pushes the
-current screen away and the next one slides in. Chrome and your other app need to
-be on different screens (full-screen apps or separate desktops) for this to have
-an effect. Prefer back/forward inside one app? Run with `--history`.
+Nothing fires unless the engine is armed, which is what stops waving at someone from
+changing the page.
 
-**Pinch to scroll.** Touch your thumb and index fingertip together: that is a finger on
-the glass. While you pinch, the page follows your hand up and down, one to one, in both
-directions (`pinchScrollGain`: moving your hand 0.4 of the picture scrolls about a
-screen). Open the pinch and you have lifted the finger: moving your hand back scrolls
-nothing, and pinching again anywhere grabs the page again, like lifting a finger to
-scroll farther on a phone. It does not matter what your other fingers do: the pinch is
-measured as the distance between the two fingertips, not by finger shape, which the
-camera misreads while the hand moves. A pinch also takes priority over everything else
-while it lasts, so it can never read as a fist (stop), a thumbs up (send) or a swipe.
-`--invert-scroll` flips the direction. With `--debug`, `pinch=a/b` is the fingertip
-distance as a share of your knuckle width (`a`: about 0.1 pinched, 1.3 or more open) and
-the camera's confidence in the two fingertips (`b`), and `grab=ON` shows when the page is
-held.
+## Design notes
 
-**Flick to scroll.** With the same one finger, a quick move up starts scrolling
-toward the top of the page and a quick move down toward the bottom. The page then
-follows your hand for as long as it keeps going that way, so the distance scrolled
-is how far you moved: a short flick scrolls a little and a long one scrolls a lot.
-Stop moving and it stops. A diagonal move is neither a swipe nor a flick. How much
-page you get per hand distance is `flickScrollGain`.
+The interesting part of this project is deciding what a hand is *doing* from a noisy
+20 fps camera feed, and every choice below comes from recordings of a real hand.
 
-**A flick starts from a rest.** Hold your finger still for about a fifth of a second
-(`flickRestDuration`), then flick. The way back from a flick, the bounce after it and a
-flicker of the camera's pose reading all move a hand that was not resting, so none of
-them can be a flick: that is what keeps up and down apart. Flicks the same way in a
-row work with a short pause between them. The *opposite* direction is ignored for
-0.8 s after a flick (`flickReverseDelay`), because pausing at the end of a flick and
-coming back is the way back; after that it is a new flick. Up and down need less
-distance than left and right, since a hand held low has little room below it.
-
-**A swipe's return never counts.** After a swipe, your hand has to come back before the
-next swipe registers, and the move back is ignored, however far it goes. A move that
-carries on a full stroke *past* the middle still counts as a swipe the other way. The
-guard also lifts if you rest anywhere for about 1.5 s, or after 3 s, so it can't get
-stuck.
-
-The pose decides what a movement means, so gestures can't be confused: strokes
-only count in the one-finger pose and fine scrolling only in the two-finger pose.
-A pose has to be steady for a moment before it counts, so a flicker between poses
-can't switch modes. One-finger mode is stickier still: a reading that is merely
-unclear (the camera calling it `other` or `fist` for a few frames, which happens
-when your hand is low or moving fast) does not end it, and neither does a little
-finger that sticks out. It ends when you show a clear different pose, or after
-about a second with nothing that looks like one finger.
-
-**Fine scroll follows your hand,** like two fingers on a trackpad: move up and the
-page scrolls up, move down and it scrolls down, hold still and it stops.
-(`--rate-scroll` restores the older model where hand height sets the speed.)
-
-**Voice dictation (`--voice`).** Draw a circle in the air with your **open palm**, in
-either direction, and AirSwipe presses your dictation shortcut: dictation starts.
-Talk, then draw another circle: dictation stops and the text lands in the message box
-you are focused on. AirSwipe records no audio itself; macOS Dictation does the
-listening and Apple does the transcribing. A palm is used because a circle drawn with
-one finger would also switch screens and scroll. It is off unless you pass `--voice`,
-because it presses a key into whatever app is in front.
-
-One-time setup:
-
-1. System Settings > Keyboard > Dictation: turn Dictation on.
-2. Set its **Shortcut** to **Customize…** and press **Control + Option + D**. (Any
-   other chord works if you pass the same one as `--voice-key`.)
-3. Run `airswipe --live --voice` from a shell that has Accessibility permission, such
-   as the Claude app's Terminal panel or Terminal.app. No click is needed (see
-   below), but give it about 6 seconds after launch before the first circle.
-
-**No click needed.** A start circle first brings the Claude app forward and puts the
-cursor in its message box, then presses the key; a stop circle just presses the key.
-AirSwipe does this through the macOS accessibility API: the Claude app (built on
-Chromium) exposes its message box as a text area labelled "Prompt" once it has been
-asked to build its interface tree, and AirSwipe asks at startup. `--voice-target
-frontmost` skips all of it and presses the key into whatever is focused, which is
-what you want for a terminal. `airswipe --focus-claude` runs just the focusing step
-as a check.
-
-The key is pressed the way a real keyboard presses it (modifier keys as their own
-events, the key held about 100 ms). A bare key-down and key-up starts Dictation but
-cannot stop it; see `docs/superpowers/spike-voice-key.md`.
-
-**Send.** Hold a thumbs up still for about 0.7 s and AirSwipe presses Return in the
-Claude message box, sending what you dictated. If dictation is still running it stops
-it first and waits for the text to land. That closes the loop: circle, talk, thumbs up.
-It fires once per hold (lower the thumb to send again), never stops AirSwipe (a held
-fist still does that), and is on with `--voice`. The camera reads the thumb less
-reliably than the fingers, so a short flicker in the middle of the hold is forgiven.
-A thumbs up is a fist with the thumb **straight and pointing up**; a tucked, bent or
-sideways thumb is still a fist. `--debug` prints `thumb=straightness/up` for tuning.
-
-For Claude Code's command-line tool (not tested yet), run `/voice tap`, bind
-`voice:pushToTalk` to a chord in `~/.claude/keybindings.json`, turn on Terminal.app's
-"Use Option as Meta key", and run `airswipe --live --voice-key meta+k`. That route
-needs a claude.ai login and microphone permission for the terminal app, and the audio
-goes to Anthropic.
-
-**It works with your hand held low.** Poses come from how *straight* each finger
-is, which needs only the finger's own joints. The wrist, which is out of view when
-a hand rests above the keyboard, isn't used, and neither is the size or angle of
-the hand.
-
-## Status
-
-- **Gesture logic** (`AirSwipeCore`): built test-first, 177 passing tests.
-- **Camera layer** (`airswipe`): run on a real camera over several sessions, and
-  the thresholds were set from those logs. Live swipes and flicks were tried and
-  look good. The scroll that follows a flick, and the still-fist stop, are newer
-  and tuned only from replaying recorded logs, so treat their feel (`flickScrollGain`,
-  `fistStillnessRadius`) as tunable.
+- **A pure state machine.** `GestureEngine` takes timestamped hand samples and returns
+  events. It never reads a clock or touches the camera, so false positives, the hard
+  part of gesture control, are tested with synthetic hand paths (168 tests,
+  Swift Testing) and by replaying recorded camera logs.
+- **Poses from finger straightness.** A finger is extended or curled by how straight
+  its own joints are, which needs no wrist (out of view when a hand rests above a
+  keyboard), hand size or angle.
+- **The pinch is the clutch for scrolling.** An earlier up/down "flick" gesture kept
+  mixing up its direction, because in the air there is no finger lift: every move back
+  looked like a new flick. Recordings also showed one finger was read as one finger in
+  only 52 to 66% of frames while the hand moved (80 to 87% still). So scrolling now
+  uses the distance between thumb tip and index tip, as a share of knuckle width. It
+  read 0.01 to 0.17 through whole pinched drags and 1.3 or more with the hand open,
+  whatever the other fingers looked like. Opening the pinch is lifting the finger, so
+  the way back scrolls nothing. While a pinch is on, it outranks every pose (a pinch
+  with curled fingers reads as a fist or a thumbs up).
+- **Thresholds measured, not guessed.** A thumbs up was first confused with a relaxed
+  fist; the recordings showed the fingers separated them (tightly curled in a real
+  thumbs up, looser in a fist), so that is what the classifier checks.
+- **Voice without audio code.** AirSwipe records nothing. It presses the macOS
+  Dictation shortcut as a realistic keyboard event (modifiers as their own events, the
+  key held ~100 ms; a bare key-down/up starts Dictation but cannot stop it). The Claude
+  desktop app is built on Chromium, so a start circle asks it to build its
+  accessibility tree and focuses the message box through the macOS accessibility API,
+  with no click needed.
+- **Safe by default.** It is a dry run that posts nothing until you pass `--live`, and
+  voice features are off until you pass `--voice`.
 
 ## Requirements
 
@@ -137,7 +62,7 @@ the hand.
 - For switching screens: *Move left/right a space* turned on under System Settings >
   Keyboard > Keyboard Shortcuts > Mission Control (it is on by default)
 
-## First run
+## Run it
 
 ```bash
 swift run airswipe            # dry run: prints what it would do, posts nothing
@@ -145,32 +70,38 @@ swift run airswipe --live     # really posts screen-switch and scroll events
 ```
 
 Run it from Terminal.app or iTerm. macOS will ask for **Camera** access for that
-terminal app. `--live` also needs **Accessibility** access for the same app
-(System Settings > Privacy & Security > Accessibility); without it macOS drops
-the events silently.
+terminal app. `--live` also needs **Accessibility** access for the same app (System
+Settings > Privacy & Security > Accessibility); without it macOS drops the events
+silently. Start with the dry run and watch the messages before using `--live`.
+Scrolling goes to whatever is under the mouse pointer, so rest it over the page.
 
-Start with the dry run and watch the messages before using `--live`. Scrolling
-goes to whatever is under the mouse pointer, so rest it over the page.
+### Try it (about 3 minutes)
 
-## Test checklist (about 3 minutes)
+1. Run `swift run airswipe` and click **Allow** on the camera prompt.
+2. Hold a flat open palm still. Expect `armed: hand gestures are on`.
+3. Show **one finger** (index up, others curled), pause a beat, then swipe to **your
+   right**. Expect `swipe right`. Bring your hand back: nothing should fire. Swipe left.
+4. **Pinch** your thumb and index fingertip together and move your hand up and down:
+   the page should follow. Open the pinch, move back, pinch again.
+5. Optional: show **two fingers** and move up and down for fine scroll.
+6. Hold a fist **still** for half a second. Expect `disarmed (fist held)`.
+7. If something is off, add `--debug` and look at `pose=` and `pinch=`.
 
-1. In **Terminal.app**, `cd` into this folder and run `swift run airswipe`.
-2. Click **Allow** on the camera prompt.
-3. Hold a flat open palm still. Expect `armed: hand gestures are on`.
-4. Show **one finger** (index up, other fingers curled), pause a beat, then swipe
-   to **your right**. Expect `swipe right`, then `would move to the screen on the
-   LEFT`. Bring your hand back to the middle: **nothing should fire**. Then swipe
-   left: `swipe left`, then `would move to the screen on the RIGHT`.
-5. Still with one finger, flick your hand **up** a short way, then bring it back to
-   the middle. Expect `flick up` and `would scroll UP` with a few hundred pixels,
-   and nothing on the way back. Flick **up** again, farther: it scrolls more. Then
-   flick **down**: `flick down`, `would scroll DOWN`.
-6. Optional: show **two fingers** and move your hand up and down for fine scroll.
-7. Go back to an open palm and move around. Nothing should happen.
-8. Hold a fist **still** for about half a second. Expect `disarmed (fist held)`. A
-   fist that is moving does not stop it.
-9. If something is off, run with `--debug` and look at `mode=` and `pose=`: they
-   should read `oneFinger` / `twoFingers` for the pose you are showing.
+### Voice dictation (`--voice`)
+
+One-time setup:
+
+1. System Settings > Keyboard > Dictation: turn Dictation on.
+2. Set its **Shortcut** to **Customize…** and press **Control + Option + D** (any other
+   chord works if you pass the same one as `--voice-key`).
+3. Run `swift run airswipe --live --voice` from a shell that has Accessibility
+   permission and give it about 6 seconds, so the Claude app can build its interface.
+
+Then: draw a circle with an open palm, talk, then give a thumbs up. The circle focuses
+the Claude message box and starts dictation; the thumbs up stops it, waits for the text
+to land, and presses Return. A second circle instead of the thumbs up stops dictation
+without sending. `--voice-target frontmost` presses the key into whatever is focused
+(for a terminal), and `airswipe --focus-claude` tests the focusing step alone.
 
 ## Options
 
@@ -178,87 +109,77 @@ goes to whatever is under the mouse pointer, so rest it over the page.
 |---|---|
 | *(none)* | Dry run |
 | `--live` | Post real key and scroll events |
-| `--voice` | An open-palm circle starts and stops voice dictation by pressing its shortcut (default `ctrl+opt+d`) |
+| `--voice` | Palm circle starts/stops dictation, thumbs up sends |
 | `--voice-key CHORD` | The chord to press, like `ctrl+opt+d` or `meta+k`. Implies `--voice` |
-| `--voice-target claude\|frontmost` | `claude` (default): bring the Claude app forward and focus its message box before starting dictation. `frontmost`: press the key into whatever is focused |
+| `--voice-target claude\|frontmost` | `claude` (default): focus the Claude message box first. `frontmost`: press the key into whatever is focused |
 | `--focus-claude` | Focus the Claude message box once and exit, to test that step alone |
 | `--history` | Swipes go back/forward inside an app (`Cmd+[` / `Cmd+]`) instead of switching screens |
-| `--invert-scroll` | Flip the scroll direction (flicks and fine scroll) |
+| `--invert-scroll` | Flip the scroll direction (pinch and fine scroll) |
 | `--rate-scroll` | Fine scroll by hand height (speed) instead of following the hand |
 | `--no-mirror` | Do not mirror the camera horizontally |
-| `--debug` | Print what the camera layer sees about ten times a second (engine mode and return-guard state, hand found, per-finger straightness, pose, knuckle position, armed state). When a move was big enough to be a stroke but was turned down, the line ends with `REJECTED` and the reason |
+| `--debug` | Print what the camera layer sees about ten times a second: engine mode, `grab=` (page held by a pinch), per-finger straightness, pose, thumb, `pinch=distance/confidence`, knuckle position. A move that was big enough to be a swipe but was turned down ends the line with `REJECTED` and the reason |
 
 ## If it feels wrong
+
+Every threshold is a field of `GestureConfig` in `Sources/AirSwipeCore/Types.swift`
+(times in seconds, distances as a share of the camera frame).
 
 | Symptom | Try |
 |---|---|
 | Swipe right moves to the wrong side | `--no-mirror` |
-| Swiping does nothing to Chrome or your other app | They must be on different screens (full-screen apps or desktops). Check that *Move left/right a space* is on in Mission Control keyboard shortcuts |
-| Flick up scrolls the wrong way | `--invert-scroll` |
-| A flick scrolls too far or too little | `flickScrollGain` in `GestureConfig` (default 2.0: a move of 0.2 of the picture scrolls about half a screen) |
-| A flick scrolls and then the page stops too soon, or keeps going on your way back | `flickFollowReversal` (default 0.015): how far the hand may slip back before the flick counts as over |
-| It stops when you didn't mean to | A fist must be held still: `fistStillnessRadius` (default 0.06) and `fistDisarmDuration` (0.5 s) |
-| Swipes are missed | Lower `swipeMinDistance` (default 0.12 of the frame) or raise `swipeWindow` |
-| Flicks are missed, or a flick down does not register | Lower `flickMinDistance` (default 0.08 of the frame). Hold your hand a little higher in the picture so there is room to move down. Keep your finger still for about 0.2 s before each flick: a flick straight out of a moving hand is ignored |
-| A flick up or down is missed, or comes out the wrong way | Run with `--debug` and make the move. A `REJECTED` tail names the cause: `mode is …` (the pose was not one finger for long enough), `the hand was not still first` (no rest before the move; `rest=yes` in the debug line shows when the engine counts you as resting), `the way back from the flick …` (the opposite direction within 0.8 s of a flick), `held by return guard` (swipes only: the hand had not come back, or the carry-on was too short), `held by cooldown`, or `too far off the axis`. Also check `y=`: a hand resting near 0 has no room to move down |
-| Diagonal moves fire when they shouldn't, or are ignored when they should count | `swipeMaxVerticalRatio` (how far off-axis a stroke may drift, default 0.6) |
+| Swiping does nothing to Chrome or another app | They must be on different screens (full-screen apps or desktops); check *Move left/right a space* in Mission Control shortcuts |
+| The page scrolls the wrong way, or too far | `--invert-scroll`, or `pinchScrollGain` (3.0) / `scrollFollowGain` (2.5) |
+| The pinch does not grab | `--debug`: `pinch=` should read 0.18 or less while the fingertips touch (`pinchEngageRatio`) for 0.1 s, with confidence 0.6 or more after the slash. Face the thumb tip and index tip at the camera and keep the hand off the bottom edge |
+| The pinch will not let go, or scrolling stutters | It lets go at 0.35 or more for 0.15 s; between 0.18 and 0.35 nothing changes, on purpose |
+| A fist scrolls instead of stopping | The fist read as a pinch (a real fist read 0.24 to 0.74). Lower `pinchEngageRatio` |
+| It stops when you did not mean to | A fist must be held still: `fistStillnessRadius` (0.06) and `fistDisarmDuration` (0.5 s) |
 | It never arms | Hold the palm flat and still, face the camera, add light |
-| The circle does nothing | Arm first, use an **open palm**, and draw it as one loop that comes back to where it started, within 2 s and at least 0.10 of the picture across and down. `--debug` should show `mode=openPalm` while you draw. Tune `circleMinTurn`, `circleMinSize`, `circleWindow` |
-| The circle fires but dictation does not start or stop | The macOS Dictation shortcut must equal `--voice-key`. Run `airswipe --focus-claude` to check the focusing step alone (it should print `focused the Claude message box`; if it cannot find the box, the app's interface may have changed, so use `--voice-target frontmost` and click the box yourself). The app running AirSwipe needs Accessibility permission. A second circle within 1 s is ignored (`circleCooldown`) |
-| The thumbs up does not send, or a fist sends | Run with `--debug` and look at `thumb=a/b`: `a` is how straight the thumb is and `b` how far it points up (1 straight up). A thumbs up needs `a` of 0.95 or more and `b` of 0.80 or more (`HandPoseClassifier.thumbExtendedStraightness`, `thumbUpCosine`), and all four fingers curled **tightly**: the average of the four `str=` values must be 0.50 or less (`thumbsUpFingerStraightness`), because a relaxed fist with the thumb loosely up reads about 0.65 to 0.75 there. Squeeze the fingers firmly when you give a thumbs up. Hold it still for 0.7 s (`sendHoldDuration`) |
-| The pinch does not grab the page | Run with `--debug`: `pinch=` should read 0.18 or less while your fingertips touch (`pinchEngageRatio`), held for 0.1 s, and the confidence after the slash should be 0.6 or more. Make sure the thumb tip and index tip both face the camera, and keep your hand out of the bottom edge of the picture |
-| The pinch will not let go, or scrolling stutters | It lets go at 0.35 or more for 0.15 s (`pinchReleaseRatio`, `pinchReleaseDuration`). Between 0.18 and 0.35 nothing changes, on purpose |
-| The page scrolls the wrong way, or too far | `--invert-scroll`, or `pinchScrollGain` (default 3.0) |
-| A fist scrolls instead of stopping | A fist read as a pinch (`pinch=` 0.18 or less while the fist is held; a real fist read 0.24 to 0.74). Lower `pinchEngageRatio` |
-| A figure of eight fires once | Its first loop is a round loop, and a detector that decides as the hand moves cannot know a second loop follows |
-| One or two fingers are not recognized | `--debug`: `str=` is each finger's straightness. Extended fingers read about 0.98 to 1.00 and curled ones 0.9 or less. Curl the other fingers tighter, or tune `extendedStraightness` / `curledStraightness` in `HandPoseClassifier` |
-| It switches modes too slowly or too eagerly | `poseStableDuration` in `GestureConfig`. `strokePoseHold` (default 1 s) is how long one-finger mode survives with no one-finger reading |
-| Flicks work with your hand high but not low | The camera reads a hand at the bottom edge badly (the pose turns to `other` or `fist`, the hand can drop out). Hold it so your knuckles sit about mid-picture, with room to move down |
-| A swipe is ignored right after another one | The return guard is waiting for your hand to come back to where the swipe started. Return there, or rest about 1.5 s. Tune `swipeReturnGuard` and `swipeHomeRadius` |
-| A flick is ignored right after another one | It has to start from a rest, so pause about 0.2 s first (`flickRestDuration`; a pose flicker shifts the reading by more than `flickRestRadius`, 0.02, and breaks the rest). The opposite direction also waits `flickReverseDelay` (0.8 s) |
-| Fine scroll is too fast or too slow | `scrollFollowGain` (default 2.5) |
-| Fine scroll jitters with your hand at rest | Raise `scrollFollowDeadband` or lower `scrollSmoothing` |
-
-Every threshold is a field of `GestureConfig` in
-`Sources/AirSwipeCore/Types.swift`, with times in seconds and distances as a
-fraction of the camera frame.
+| Swipes are missed | Lower `swipeMinDistance` (0.12) or raise `swipeWindow`. Diagonal moves are ignored: `swipeMaxVerticalRatio` |
+| A swipe is ignored right after another | The return guard waits for your hand to come back to where the swipe started; rest about 1.5 s, or tune `swipeReturnGuard` / `swipeHomeRadius` |
+| One or two fingers are not recognized | `--debug`: `str=` is each finger's straightness (extended ≈ 0.98 to 1.00, curled ≤ 0.9). Curl the others tighter, or tune `extendedStraightness` / `curledStraightness` |
+| The circle does nothing | Arm first, use an open palm, draw one loop that closes within 2 s and spans at least 0.10 of the picture. Tune `circleMinTurn`, `circleMinSize`, `circleWindow` |
+| The circle fires but dictation does not start or stop | The macOS Dictation shortcut must equal `--voice-key`, and the app running AirSwipe needs Accessibility permission. Try `airswipe --focus-claude` |
+| The thumbs up does not send, or a fist sends | `--debug`: `thumb=a/b` is the thumb's straightness and how far up it points. A thumbs up needs `a` ≥ 0.95, `b` ≥ 0.80 and the four fingers curled tightly (their average `str=` ≤ 0.50): squeeze the fingers. Hold it 0.7 s |
 
 ## How it works
 
 ```
 CameraSource ─frames→ HandTracker ─HandSample?→ GestureEngine ─GestureEvent→ ActionMapper ─Action→ ActionSink
- (AVFoundation)        (Vision + pose)          (pure state machine)          (pure)               (CGEvent / console)
+ (AVFoundation)        (Vision + pose + pinch)   (pure state machine)          (pure)               (CGEvent / console)
 ```
 
-`HandTracker` turns the Vision joints into a knuckle position and a `HandPose`.
-The engine takes timestamped samples and returns events (`swipe`, `flick`,
-`scroll`). It has no camera or clock, so false positives can be tested with
-synthetic hand paths:
+```
+Sources/AirSwipeCore/    pure logic, no camera or AppKit, fully unit-tested
+  GestureEngine          arming, modes, swipes with a return guard, fist stop, send
+  PinchScroller          pinch grab / follow / release
+  CircleDetector         palm circle: turn, size, roundness and closure over a sliding window
+  HandPoseClassifier     poses from finger straightness; thumbs up vs fist
+  ActionMapper, KeyChord events to actions; key chord parsing
+Sources/airswipe/        camera, Vision, CGEvent, menu bar, accessibility
+  CameraSource, HandTracker, Sinks, StatusItem, ClaudePromptFocus, main
+Tests/AirSwipeCoreTests  168 tests
+docs/superpowers/        design specs, plans and the key-press spike
+```
 
 ```bash
 swift test
 ```
 
-Design and plan: [`docs/superpowers/specs`](docs/superpowers/specs/2026-10-15-airswipe-design.md),
-[`docs/superpowers/plans`](docs/superpowers/plans/2026-10-15-airswipe.md).
+Design and decisions: [`docs/superpowers/specs`](docs/superpowers/specs/2026-10-15-airswipe-design.md)
+and the [voice design](docs/superpowers/specs/2026-10-16-voice-circle-design.md).
 
-## Known limits
+## Status and known limits
 
-- One hand, one camera, and it needs reasonable light.
-- Hand pose runs continuously while the app is open, which costs CPU and battery.
-- Poses come from finger straightness, a geometric measure that may need tuning
-  for your hands and lighting. The thumb is ignored, and so is the little finger
-  when telling one finger from two (it is short and often left sticking out).
-- Your fingers and knuckles have to stay inside the picture. If the hand leaves
-  the frame for about a second it stops (`disarmed (hand out of view)`).
-- It sends keyboard shortcuts and scroll events, not true trackpad gestures, so a
-  swipe only does something where `Ctrl+←/→` (or `Cmd+[` / `Cmd+]` with
-  `--history`) would.
-- Voice dictation finds the Claude message box by its accessibility label ("Prompt"),
-  so an app update that renames it would break the automatic focus (`--voice-target
-  frontmost` is the fallback). Drawing the start circle brings the Claude window to
-  the front. The press must come from a process with Accessibility
-  permission (an assistant's own sandboxed shell has none). The 🎙 mark is an
-  assumption and can be wrong if dictation stops by itself; the next circle then
-  starts a new session.
-- Not packaged as an `.app`, not signed or notarized.
+- Built and tuned on one person's hand, one Mac camera and one room, over several
+  live sessions. Thresholds are starting values you may need to adjust.
+- One hand, one camera, reasonable light. Hand pose runs continuously while the app is
+  open, which costs CPU and battery.
+- Your fingers and knuckles have to stay inside the picture; if the hand leaves the
+  frame for about a second it stops (`disarmed (hand out of view)`).
+- It sends keyboard shortcuts and scroll events, not true trackpad gestures, so a swipe
+  only does something where `Ctrl+←/→` (or `Cmd+[` / `Cmd+]` with `--history`) would.
+- Voice finds the Claude message box by its accessibility label ("Prompt"), so an app
+  update that renames it would break the automatic focus (`--voice-target frontmost`
+  is the fallback). The 🎙 mark is an assumption: AirSwipe cannot see whether
+  dictation is really running.
+- A command-line tool, not packaged as an `.app`, signed or notarized.

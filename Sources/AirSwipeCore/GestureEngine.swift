@@ -10,8 +10,9 @@ import Foundation
 /// confused with each other:
 ///
 ///     open palm, held still        starts it (arms)
-///     one finger                   stroke mode: a quick sideways move swipes,
-///                                  a quick up or down move flicks
+///     thumb and index tips touching  pinch scroll: the page follows the hand up and
+///                                  down; opening the pinch lets go (checked first)
+///     one finger                   stroke mode: a quick sideways move swipes
 ///     two fingers                  scroll mode: the page follows the hand
 ///     fist, held                   stops it (disarms)
 ///
@@ -21,25 +22,6 @@ public final class GestureEngine {
     private enum State {
         case idle
         case armed
-    }
-
-    private enum Axis {
-        case horizontal
-        case vertical
-    }
-
-    private enum Stroke {
-        case swipe(SwipeDirection)
-        /// `travel` is how far the hand had moved when the flick was recognized.
-        case flick(FlickDirection, travel: Double)
-    }
-
-    /// A flick being followed: the page scrolls with the hand while it keeps going
-    /// the way it flicked. `direction` is +1 for up and -1 for down, and `extreme` is
-    /// the farthest height reached so far in that direction.
-    private struct Follow {
-        var direction: Double
-        var extreme: Double
     }
 
     private let config: GestureConfig
@@ -67,34 +49,21 @@ public final class GestureEngine {
     /// Smoothed hand height while the page is following the hand.
     private var followY: Double?
 
-    // Armed: tracking. Position is followed in every pose so that a stroke
+    // Armed: tracking. Position is followed in every pose so that a swipe
     // survives a flicker; the mode only decides whether it counts.
     private var previousTime: TimeInterval?
     private var window: [(time: TimeInterval, x: Double, y: Double)] = []
     private var lastStrokeTime: TimeInterval = -.infinity
-    private var follow: Follow?
 
     // Armed: the return guard, for swipes. After a swipe the hand comes back toward where
     // it started, and that return must not count as a swipe the other way. Positions are
     // x. `returnDirection` is +1 for a swipe that went right and -1 for one that went left.
-    // Flicks have no such guard: they start from a rest, see `rest`.
     private var awaitingReturn = false
     private var returnDirection = 1.0
     private var returnHome = 0.5
     private var guardSince: TimeInterval = 0
     private var dwellValue = 0.5
     private var dwellSince: TimeInterval = 0
-
-    // Armed: flicks. A flick moves away from where the hand last rested, and for
-    // `flickReverseDelay` afterwards the opposite direction is the way back, not a flick.
-    private var rest: RestTracker
-    private var lastFlickTime: TimeInterval = -.infinity
-    /// +1 for up, -1 for down.
-    private var lastFlickDirection = 1.0
-    /// The rest a move was turned down from as the way back. Moves from that same rest
-    /// stay turned down even after `flickReverseDelay`, so a slow return cannot become a
-    /// flick halfway through; a new rest elsewhere clears it.
-    private var blockedOrigin: (x: Double, y: Double)?
 
     // Armed: pinch scroll. Fingertips touching grab the page and the hand drags it.
     private var pinchScroller: PinchScroller
@@ -125,15 +94,13 @@ public final class GestureEngine {
     public init(config: GestureConfig = GestureConfig()) {
         self.config = config
         self.circle = CircleDetector(config: config)
-        self.rest = RestTracker(config: config)
         self.pinchScroller = PinchScroller(config: config)
     }
 
     /// One line describing the engine's internal state, for debugging.
     public var diagnostics: String {
         let guardText = awaitingReturn ? String(format: "ON(x=%.2f)", returnHome) : "off"
-        return "mode=\(mode) guard=\(guardText) follow=\(follow == nil ? "off" : "ON") "
-            + "rest=\(rest.isAtRest ? "yes" : "no") grab=\(pinchScroller.isEngaged ? "ON" : "off")"
+        return "mode=\(mode) guard=\(guardText) grab=\(pinchScroller.isEngaged ? "ON" : "off")"
     }
 
     /// Feed one frame. `sample` is nil when no hand is visible.
@@ -209,9 +176,7 @@ public final class GestureEngine {
             thumbAnchor = nil
             thumbLatched = false
             window.removeAll()
-            rest.restart(x: sample.x, y: sample.y, at: time)
             circle.reset()
-            follow = nil
             lastRejection = nil
             if pinch.isEngaged { lastActivity = time }
             return pinch.scroll == 0 ? [] : [.scroll(amount: pinch.scroll)]
@@ -219,7 +184,6 @@ public final class GestureEngine {
         if pinch.released {
             // Letting go moves the hand too. That move is not a swipe.
             window.removeAll()
-            rest.restart(x: sample.x, y: sample.y, at: time)
         }
 
         // A fist is the stop signal, and only a fist: a pose that is merely
@@ -396,21 +360,8 @@ public final class GestureEngine {
 
     private func gestureEvents(for sample: HandSample, at time: TimeInterval,
                                dt: Double) -> [GestureEvent] {
-        if let stroke = detectStroke(sample, at: time) {
-            switch stroke {
-            case .swipe(let direction):
-                follow = nil
-                return [.swipe(direction)]
-            case .flick(let direction, let travel):
-                // The flick has already covered `travel`, so scroll that much at once
-                // and follow the hand from here.
-                let sign = direction == .up ? 1.0 : -1.0
-                follow = Follow(direction: sign, extreme: sample.y)
-                return [.flick(direction), .scroll(amount: sign * travel * config.flickScrollGain)]
-            }
-        }
-        if let amount = followFlick(sample) {
-            return [.scroll(amount: amount)]
+        if let direction = detectSwipe(sample, at: time) {
+            return [.swipe(direction)]
         }
         if config.circleEnabled {
             if mode == .openPalm {
@@ -425,142 +376,47 @@ public final class GestureEngine {
         return scroll(for: sample, dt: dt)
     }
 
-    /// While a flick is being followed, scroll by how much farther the hand has gone
-    /// the same way. Backing off does not scroll back; once the hand has backed off
-    /// by more than `flickFollowReversal` (or left stroke mode) the flick is over,
-    /// and the return guard decides what the move back means.
-    private func followFlick(_ sample: HandSample) -> Double? {
-        guard var current = follow, mode == config.swipePose else {
-            follow = nil
-            return nil
-        }
-        // Signed like the hand: positive is up, so a flick up scrolls toward the top.
-        let moved = sample.y - current.extreme
-        if moved * current.direction > 0 {
-            current.extreme = sample.y
-            follow = current
-            return moved * config.flickScrollGain
-        }
-        if -moved * current.direction > config.flickFollowReversal {
-            follow = nil
-        }
-        return nil
-    }
-
-    /// A stroke is a fast, mostly straight move made in stroke mode, sideways for a
-    /// swipe or up and down for a flick. A move that is diagonal is neither.
+    /// A swipe is a fast, mostly sideways move made in one-finger mode. A move that is
+    /// diagonal is not one. (Scrolling is the pinch, see `PinchScroller`: the up and down
+    /// flick that used to be here could not tell a flick from the hand coming back.)
     ///
-    /// **Swipes** measure their travel from the turnaround point in the recent window,
-    /// so a swipe straight after a return keeps the distance the hand covered on its way
-    /// back. After a swipe fires, the next waits for the hand to return (see
-    /// `updateReturnGuard`), which keeps the move back from counting the other way. The
-    /// one exception is a *carry-on*: a move the other way that goes a full swipe past
-    /// where the previous one began. That is deliberate, not a return, and it lets a
-    /// side-to-side bounce work.
-    ///
-    /// **Flicks** start from a rest (see `RestTracker`): the hand was still, then moved
-    /// `flickMinDistance` away from where it rested, quickly. The way back from a flick,
-    /// the rebound after it and a pose flicker all move a hand that is not resting, so
-    /// none of them is a flick. Real returns also pause and overshoot, so for
-    /// `flickReverseDelay` after a flick the opposite direction is ignored even from a
-    /// rest; the same direction, like several flicks down in a row, is not held.
-    private func detectStroke(_ sample: HandSample, at time: TimeInterval) -> Stroke? {
+    /// The travel is measured from the turnaround point in the recent window, so a swipe
+    /// straight after a return keeps the distance the hand covered on its way back. After a
+    /// swipe fires, the next waits for the hand to return (see `updateReturnGuard`), which
+    /// keeps the move back from counting the other way. The one exception is a *carry-on*:
+    /// a move the other way that goes a full swipe past where the previous one began. That
+    /// is deliberate, not a return, and it lets a side-to-side bounce work.
+    private func detectSwipe(_ sample: HandSample, at time: TimeInterval) -> SwipeDirection? {
         lastRejection = nil
         window.append((time, sample.x, sample.y))
         window.removeAll { time - $0.time > config.swipeWindow }
-        rest.update(x: sample.x, y: sample.y, at: time)
-        if rest.origin == nil { blockedOrigin = nil }
 
         guard let lowX = window.min(by: { $0.x < $1.x }),
-              let highX = window.max(by: { $0.x < $1.x }),
-              let lowY = window.min(by: { $0.y < $1.y }),
-              let highY = window.max(by: { $0.y < $1.y }) else {
+              let highX = window.max(by: { $0.x < $1.x }) else {
             return nil
         }
 
-        // Sideways.
         let rightward = sample.x - lowX.x
         let leftward = highX.x - sample.x
         let goesRight = rightward >= leftward
         let travelX = goesRight ? rightward : leftward
         let originX = goesRight ? lowX : highX
-        let isSideways = travelX >= config.swipeMinDistance
-            && abs(sample.y - originX.y) <= config.swipeMaxVerticalRatio * travelX
-
-        // Up and down, measured from where the hand last rested. Without a rest there
-        // is no flick, whatever the hand just did.
-        var flickTravel = 0.0
-        var goesUp = true
-        var isVertical = false
-        if let origin = rest.origin {
-            let rise = sample.y - origin.y
-            flickTravel = abs(rise)
-            goesUp = rise >= 0
-            isVertical = flickTravel >= config.flickMinDistance
-                && abs(sample.x - origin.x) <= config.swipeMaxVerticalRatio * flickTravel
-        }
-
-        let axis: Axis
-        switch (isSideways, isVertical) {
-        case (false, false):
-            if travelX >= config.swipeMinDistance || flickTravel >= config.flickMinDistance {
-                lastRejection = String(format: "diagonal: across %.2f, up/down %.2f, too far off the axis",
-                                       travelX, flickTravel)
-            } else if rest.origin == nil {
-                // Say why a vertical move was turned down, using the swing in the last moment.
-                let swingUp = sample.y - lowY.y
-                let swingDown = highY.y - sample.y
-                let swing = max(swingUp, swingDown)
-                if swing >= config.flickMinDistance {
-                    lastRejection = String(format: "%@ %.2f held: the hand was not still first (a flick starts from %.2fs of rest)",
-                                           swingUp >= swingDown ? "up" : "down", swing, config.flickRestDuration)
-                }
-            }
+        let vertical = abs(sample.y - originX.y)
+        guard travelX >= config.swipeMinDistance else { return nil }
+        guard vertical <= config.swipeMaxVerticalRatio * travelX else {
+            lastRejection = String(format: "diagonal: across %.2f, up/down %.2f, too far off the axis",
+                                   travelX, vertical)
             return nil
-        case (true, false): axis = .horizontal
-        case (false, true): axis = .vertical
-        case (true, true):
-            let sidewaysShare = travelX / config.swipeMinDistance
-            let verticalShare = flickTravel / config.flickMinDistance
-            axis = sidewaysShare >= verticalShare ? .horizontal : .vertical
         }
 
-        let isPositive = axis == .horizontal ? goesRight : goesUp
-        let direction = isPositive ? 1.0 : -1.0
-        let name: String
-        switch (axis, isPositive) {
-        case (.horizontal, true): name = "right"
-        case (.horizontal, false): name = "left"
-        case (.vertical, true): name = "up"
-        case (.vertical, false): name = "down"
-        }
-        let travel = axis == .horizontal ? travelX : flickTravel
+        let direction = goesRight ? 1.0 : -1.0
+        let name = goesRight ? "right" : "left"
+        let travel = travelX
 
         guard mode == config.swipePose else {
             lastRejection = String(format: "%@ %.2f ignored: mode is %@, not %@ (pose now %@)",
                                    name, travel, "\(mode)", "\(config.swipePose)", "\(sample.pose)")
             return nil
-        }
-
-        if axis == .vertical {
-            // Not held by a pending swipe's return guard: a flick starts from a rest, which
-            // a swipe's return is not.
-            let origin = rest.origin
-            let alreadyBlocked = blockedOrigin.map { $0.x == origin?.x && $0.y == origin?.y } ?? false
-            if alreadyBlocked || (direction != lastFlickDirection && time - lastFlickTime < config.flickReverseDelay) {
-                blockedOrigin = origin
-                lastRejection = String(format: "%@ %.2f held: the way back from the flick %@ (ignored for %.2fs after it, and until the hand rests again)",
-                                       name, travel, lastFlickDirection > 0 ? "up" : "down",
-                                       config.flickReverseDelay)
-                return nil
-            }
-            blockedOrigin = nil
-            lastFlickTime = time
-            lastFlickDirection = direction
-            lastStrokeTime = time
-            window.removeAll()
-            rest.restart(x: sample.x, y: sample.y, at: time)
-            return .flick(goesUp ? .up : .down, travel: flickTravel)
         }
 
         let current = sample.x
@@ -597,9 +453,8 @@ public final class GestureEngine {
         dwellValue = current
         dwellSince = time
         window.removeAll()
-        rest.restart(x: sample.x, y: sample.y, at: time)
 
-        return .swipe(goesRight ? .right : .left)
+        return goesRight ? .right : .left
     }
 
     private func scroll(for sample: HandSample, dt: Double) -> [GestureEvent] {
@@ -646,10 +501,7 @@ public final class GestureEngine {
         window.removeAll()
         previousTime = nil
         followY = nil
-        follow = nil
         circle.reset()
-        rest.reset()
-        blockedOrigin = nil
         pinchScroller.reset()
         thumbSince = nil
         thumbAnchor = nil

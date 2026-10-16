@@ -1,6 +1,6 @@
 # AirSwipe — Design Spec
 
-**Date:** 2026-10-15 · **Status:** approved in chat
+**Date:** 2026-10-15 · **Status:** implemented and verified live (updated 2026-10-16: scrolling is now a pinch; the flick is history)
 
 ## Goal
 
@@ -13,7 +13,7 @@ built-in camera: the trackpad's swipe and scroll, without touching it.
 |---|---|
 | Open palm held still ≈0.5 s | **Start.** Arms the app. The menu-bar icon changes. |
 | One finger (index), fast horizontal move | **Switches screens**, like the trackpad's 3- or 4-finger swipe between full-screen apps and desktops: hand moves right → screen on the left (`ctrl+←`), hand moves left → screen on the right (`ctrl+→`). `--history` maps to browser back/forward (`Cmd+[` / `Cmd+]`) instead. |
-| One finger (index), fast vertical move | **Flick:** scrolls, and the page then follows the hand for as long as it keeps going that way (`flickScrollGain`, default 2.0 full-speed-seconds per frame height), so the distance scrolled is the distance the hand moved. Up moves toward the top of the page. The move back scrolls nothing. A diagonal move is neither a swipe nor a flick. |
+| Thumb and index fingertip touching (a pinch), hand moving up or down | **Scroll like on a phone:** the page follows the hand one to one while pinched (`pinchScrollGain`, default 3.0 full-speed-seconds per frame height). Opening the pinch lets go, so the move back scrolls nothing; pinching again grabs anew. A pinch outranks every pose. Replaced the one-finger flick (see the history below). |
 | Two fingers (index and middle), hand moving up or down | **Fine scroll:** the page follows the hand and stops when it does. `--rate-scroll` restores the earlier model where height above or below the pose's start sets speed. |
 | Fist held still ≥0.5 s, hand out of frame ≥1 s, or ~15 s with no gesture | **Stop.** Disarms. Re-arm by holding an open palm again. A fist that is moving (more than `fistStillnessRadius`, 0.06) does not count. |
 
@@ -63,8 +63,9 @@ one (`pinchScrollGain`, smoothed, with a dead band), opening the pinch lifts the
 the move back scrolls nothing, and pinching again grabs anew. `PinchScroller` holds this
 state; the engine checks it first in every armed frame, and while a pinch is on it leaves
 the frame alone (a pinch with curled fingers reads as a fist or a thumbs up, and the
-hand's movement is the scroll, not a swipe). The flick code stays until pinch scrolling
-has been tried live, then goes.
+hand's movement is the scroll, not a swipe). Pinch scrolling was then tried live and
+worked, so the one-finger flick, `RestTracker` and the `flick*` settings were removed.
+The two sections below are kept as the record of what was tried and why it was dropped.
 
 **Flicks start from a rest (2026-10-16).** A debug capture showed up and down still
 mixing three ways: the return dipped below its start height and the rebound fired a
