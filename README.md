@@ -94,7 +94,7 @@ the hand.
 
 ## Status
 
-- **Gesture logic** (`AirSwipeCore`): built test-first, 152 passing tests.
+- **Gesture logic** (`AirSwipeCore`): built test-first, 159 passing tests.
 - **Camera layer** (`airswipe`): run on a real camera over several sessions, and
   the thresholds were set from those logs. Live swipes and flicks were tried and
   look good. The scroll that follows a flick, and the still-fist stop, are newer
@@ -174,7 +174,7 @@ goes to whatever is under the mouse pointer, so rest it over the page.
 | A flick up or down is missed, or comes out the wrong way | Run with `--debug` and make the move. A `REJECTED` tail names the cause: `mode is …` (the pose was not one finger for long enough), `held by return guard` (the hand had not come back, or the carry-on was too short), `held by cooldown`, or `too far off the axis`. Also check `y=`: a hand resting near 0 has no room to move down |
 | Diagonal moves fire when they shouldn't, or are ignored when they should count | `swipeMaxVerticalRatio` (how far off-axis a stroke may drift, default 0.6) |
 | It never arms | Hold the palm flat and still, face the camera, add light |
-| The circle does nothing | Arm first, use an **open palm**, and draw it within 1.5 s and at least 0.10 of the picture across and down. `--debug` should show `mode=openPalm` while you draw. Tune `circleMinTurn`, `circleMinSize`, `circleWindow` |
+| The circle does nothing | Arm first, use an **open palm**, and draw it as one loop that comes back to where it started, within 2 s and at least 0.10 of the picture across and down. `--debug` should show `mode=openPalm` while you draw. Tune `circleMinTurn`, `circleMinSize`, `circleWindow` |
 | The circle fires but dictation does not start or stop | The macOS Dictation shortcut must equal `--voice-key`. Run `airswipe --focus-claude` to check the focusing step alone (it should print `focused the Claude message box`; if it cannot find the box, the app's interface may have changed, so use `--voice-target frontmost` and click the box yourself). The app running AirSwipe needs Accessibility permission. A second circle within 1 s is ignored (`circleCooldown`) |
 | A figure of eight fires once | Its first loop is a round loop, and a detector that decides as the hand moves cannot know a second loop follows |
 | One or two fingers are not recognized | `--debug`: `str=` is each finger's straightness. Extended fingers read about 0.98 to 1.00 and curled ones 0.9 or less. Curl the other fingers tighter, or tune `extendedStraightness` / `curledStraightness` in `HandPoseClassifier` |

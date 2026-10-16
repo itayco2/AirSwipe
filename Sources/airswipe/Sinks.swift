@@ -163,7 +163,7 @@ final class CGEventSink: ActionSink {
         voiceQueue.async {
             let outcome = promptFocus.focus()
             if case .focused = outcome {
-                Thread.sleep(forTimeInterval: 0.15)
+                Thread.sleep(forTimeInterval: 0.06)
             } else {
                 fputs("airswipe: \(outcome); pressing the voice key anyway\n", stderr)
             }

@@ -121,8 +121,17 @@ if options.focusOnly {
     }
     print("Asked the Claude app to build its interface tree; waiting 6 s for it...")
     Thread.sleep(forTimeInterval: 6)
-    let outcome = focuser.focus()
-    print("airswipe: \(outcome)")
+    // Time it twice: the first call after the tree is built, then again straight away,
+    // which is what every later start circle costs.
+    func timed() -> (ClaudePromptFocus.Outcome, Int) {
+        let started = Date()
+        let outcome = focuser.focus()
+        return (outcome, Int(Date().timeIntervalSince(started) * 1000))
+    }
+    let (outcome, firstMs) = timed()
+    let (again, secondMs) = timed()
+    print("airswipe: \(outcome) (took \(firstMs) ms)")
+    print("airswipe: again: \(again) (took \(secondMs) ms)")
     exit(outcome.isFocused ? 0 : 1)
 }
 

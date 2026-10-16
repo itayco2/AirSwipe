@@ -186,8 +186,9 @@ public struct GestureConfig: Equatable {
     // Circle: an open palm drawing a circle starts and stops voice dictation. Off
     // unless `circleEnabled`, so nothing changes for anyone who does not ask for it.
     public var circleEnabled: Bool = false
-    /// The circle must be completed within this many seconds.
-    public var circleWindow: Double = 1.5
+    /// The circle must be completed within this many seconds. Real loops took 0.8 to 1.4
+    /// s, so 2 s leaves room for a slower one while a slow drift still does not count.
+    public var circleWindow: Double = 2.0
     /// The path must turn through at least this many radians in one direction. 5.5 is
     /// about 315 degrees; a person rarely closes the loop exactly.
     public var circleMinTurn: Double = 5.5

@@ -56,8 +56,11 @@ final class ClaudePromptFocus {
         guard let app = runningApp else { return .appNotRunning }
         let root = AXUIElementCreateApplication(app.processIdentifier)
         enableAccessibility(root)
+        // Bringing a background window forward takes a moment to settle; if the app is
+        // already in front there is nothing to wait for.
+        let wasFrontmost = app.isActive
         AXUIElementSetAttributeValue(root, kAXFrontmostAttribute as CFString, kCFBooleanTrue)
-        Thread.sleep(forTimeInterval: 0.15)
+        Thread.sleep(forTimeInterval: wasFrontmost ? 0.02 : 0.15)
 
         // Right after the app starts the tree may still be building, so look a few times.
         var box: AXUIElement?

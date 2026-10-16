@@ -70,14 +70,22 @@ other gesture. All numbers are starting values, to be tuned from real-camera log
 - Only while armed and in palm mode (`openPalm`). Unclear pose readings (`other`,
   `fist`) do not end palm mode, the same rule one-finger mode already has, for up to
   `strokePoseHold`.
-- Positions are kept for the last `circleWindow` (1.5 s). Heights are scaled by the
+- Positions are kept for the last `circleWindow` (2 s). Heights are scaled by the
   frame's aspect ratio (`circleAspectRatio`, 0.75 for the 640×480 capture) so a round
   motion is round in the maths.
-- It is a circle when, over that window: the path turns through at least
-  `circleMinTurn` (5.5 radians, about 315°) in **one** direction, summing signed angle
-  changes around the path's centre; its extent is at least `circleMinSize` (0.10) across
-  and down; and its radius stays within a factor of two (`circleMinRoundness` 0.5), so a
-  straight line or a flat oval does not count.
+- It is a circle when some **stretch of the path ending now** (every length is tried,
+  longest first, so the hand resting or moving into position before the loop cannot
+  spoil it) satisfies all of: it turns through at least `circleMinTurn` (5.5 radians,
+  about 315°) in **one** direction, summing signed angle changes around that stretch's
+  centre; its extent is at least `circleMinSize` (0.10) across and down; its radius is
+  similar all round (the 10th to 90th percentile spread within a factor of two,
+  `circleMinRoundness` 0.5), so a line or flat oval does not count; and it **closes**: it
+  ends within one mean radius of where it began.
+- Found with a live camera log: the first version measured roundness over the whole
+  window using the nearest and farthest points, and rejected real loops (including the
+  stop circle) because the resting hand skewed it. Closure was added because, without it,
+  simulated aimless wandering fired about 28 times as often as the first version; real
+  loops closed to 0.6 to 0.84 radii, wandering to 1.3 on average.
 - A back-and-forth wave turns by about zero and a straight or zigzag path is not round,
   so neither counts. A palm held still, even with jitter, is far below the size
   threshold.
