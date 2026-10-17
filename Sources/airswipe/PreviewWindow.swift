@@ -41,9 +41,12 @@ final class PreviewWindow {
         video = AVCaptureVideoPreviewLayer(session: session)
         video.frame = CGRect(origin: .zero, size: size)
         video.videoGravity = .resizeAspectFill
-        if let connection = video.connection, connection.isVideoMirroringSupported {
-            connection.automaticallyAdjustsVideoMirroring = false
-            connection.isVideoMirrored = mirrored
+        // Mirror with a flip of the layer, not the capture connection: the connection does not
+        // exist yet here (the session is configured when the camera starts, after this window is
+        // made), so setting it did nothing and the picture stayed un-mirrored while the drawn
+        // hand was flipped to match a mirror. It showed on the opposite side of the real hand.
+        if mirrored {
+            video.setAffineTransform(CGAffineTransform(scaleX: -1, y: 1))
         }
         root.addSublayer(video)
 
