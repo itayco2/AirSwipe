@@ -32,4 +32,14 @@ printf "\n"
 echo "Recording $SECONDS_TO_RECORD s to $OUT"
 echo "Do your demo now: arm, swipe, pinch-scroll, a circle with a search, thumbs up, fist to stop."
 screencapture -v -x -V "$SECONDS_TO_RECORD" "$OUT"
-echo "Saved: $OUT"
+echo "Saved: $OUT ($(du -h "$OUT" | cut -f1))"
+
+# A raw Retina screen recording is hundreds of MB, too big to email or attach. Make a 1080p
+# copy of about 45 MB that is easy to share (Apple's own encoder; the original is kept).
+SHARE="${OUT%.mov}-share.mp4"
+echo "Making a small copy to share (about half a minute)..."
+if swift scripts/shrink-video.swift "$OUT" "$SHARE" "${AIRSWIPE_SHARE_MB:-45}" >/dev/null 2>&1; then
+    echo "Share this one: $SHARE ($(du -h "$SHARE" | cut -f1))"
+else
+    echo "Could not make the small copy; the full recording is at $OUT"
+fi

@@ -129,9 +129,10 @@ recording shows you and the Mac at once. One command does the whole setup:
 scripts/record-demo.sh 90      # builds, starts AirSwipe with the preview, counts down, records 90 s
 ```
 
-It saves `~/Desktop/AirSwipe-demo-<time>.mov` using macOS's own `screencapture`. The first
-time, macOS asks to let your terminal record the screen (System Settings > Privacy &
-Security > Screen & System Audio Recording); allow it and run the script again.
+It saves `~/Desktop/AirSwipe-demo-<time>.mov` using macOS's own `screencapture`, then makes
+a small `…-share.mp4` (1080p, about 45 MB instead of 300) that is easy to email or attach.
+The first time, macOS asks to let your terminal record the screen (System Settings >
+Privacy & Security > Screen & System Audio Recording); allow it and run the script again.
 
 ## Options
 
@@ -194,6 +195,7 @@ Sources/airswipe/        camera, Vision, CGEvent, menu bar, accessibility
   CameraSource, HandTracker, Sinks, StatusItem, PreviewWindow, ClaudePromptFocus,
   WebTextFocus, main
 scripts/record-demo.sh   starts AirSwipe with the preview and records the screen
+scripts/shrink-video.swift  makes a small 1080p copy of a recording that fits a size budget
 Tests/AirSwipeCoreTests  192 tests
 docs/superpowers/        design specs, plans and the key-press spike
 ```
