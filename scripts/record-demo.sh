@@ -19,7 +19,7 @@ OUT="$HOME/Desktop/AirSwipe-demo-$(date +%Y%m%d-%H%M%S).mov"
 swift build -q
 .build/debug/airswipe --live --voice --preview &
 APP_PID=$!
-trap 'kill $APP_PID 2>/dev/null || true' EXIT INT TERM
+trap 'kill $APP_PID 2>/dev/null || true' EXIT
 
 echo "AirSwipe is running; its preview window is in the bottom-right corner."
 echo "Get your screen ready now: the pages or apps you will use, Claude on a throwaway chat."
@@ -31,7 +31,13 @@ printf "\n"
 
 echo "Recording $SECONDS_TO_RECORD s to $OUT"
 echo "Do your demo now: arm, swipe, pinch-scroll, a circle with a search, thumbs up, fist to stop."
-screencapture -v -x -V "$SECONDS_TO_RECORD" "$OUT"
+echo "(Press Ctrl-C to stop early; what you recorded so far is kept.)"
+screencapture -v -x -V "$SECONDS_TO_RECORD" "$OUT" &
+RECORDER_PID=$!
+# Ctrl-C stops the recorder cleanly so its file is finished, instead of leaving it running.
+trap 'kill -INT $RECORDER_PID 2>/dev/null || true' INT TERM
+wait $RECORDER_PID || true
+trap - INT TERM
 echo "Saved: $OUT ($(du -h "$OUT" | cut -f1))"
 
 # A raw Retina screen recording is hundreds of MB, too big to email or attach. Make a 1080p
