@@ -29,7 +29,7 @@ The interesting part of this project is deciding what a hand is *doing* from a n
 
 - **A pure state machine.** `GestureEngine` takes timestamped hand samples and returns
   events. It never reads a clock or touches the camera, so false positives, the hard
-  part of gesture control, are tested with synthetic hand paths (189 tests,
+  part of gesture control, are tested with synthetic hand paths (192 tests,
   Swift Testing) and by replaying recorded camera logs.
 - **Poses from finger straightness.** A finger is extended or curled by how straight
   its own joints are, which needs no wrist (out of view when a hand rests above a
@@ -120,6 +120,19 @@ from any app (the screen switches to Claude if it lives on another desktop);
 `--voice-target frontmost` never touches focus, not even inside Claude. `airswipe
 --focus-claude` tests the focusing step alone.
 
+### Record a demo video
+
+`--preview` opens a small window with your camera and the hand drawn on it, so a screen
+recording shows you and the Mac at once. One command does the whole setup:
+
+```bash
+scripts/record-demo.sh 90      # builds, starts AirSwipe with the preview, counts down, records 90 s
+```
+
+It saves `~/Desktop/AirSwipe-demo-<time>.mov` using macOS's own `screencapture`. The first
+time, macOS asks to let your terminal record the screen (System Settings > Privacy &
+Security > Screen & System Audio Recording); allow it and run the script again.
+
 ## Options
 
 | Flag | Effect |
@@ -177,8 +190,10 @@ Sources/AirSwipeCore/    pure logic, no camera or AppKit, fully unit-tested
   HandPoseClassifier     poses from finger straightness; thumbs up vs fist
   ActionMapper, KeyChord events to actions; key chord parsing
 Sources/airswipe/        camera, Vision, CGEvent, menu bar, accessibility
-  CameraSource, HandTracker, Sinks, StatusItem, ClaudePromptFocus, main
-Tests/AirSwipeCoreTests  189 tests
+  CameraSource, HandTracker, Sinks, StatusItem, PreviewWindow, ClaudePromptFocus,
+  WebTextFocus, main
+scripts/record-demo.sh   starts AirSwipe with the preview and records the screen
+Tests/AirSwipeCoreTests  192 tests
 docs/superpowers/        design specs, plans and the key-press spike
 ```
 

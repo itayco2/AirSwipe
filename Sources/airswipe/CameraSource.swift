@@ -25,7 +25,9 @@ final class CameraSource: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
         }
     }
 
-    private let session = AVCaptureSession()
+    /// The capture session. Shared with the preview window, whose layer shows the same live
+    /// feed, so the camera is opened only once.
+    let session = AVCaptureSession()
     private let queue = DispatchQueue(label: "airswipe.camera", qos: .userInteractive)
     private let onFrame: FrameHandler
 

@@ -696,6 +696,43 @@ struct DisarmTests {
 /// up and down because there is no "finger up" in the air, and one finger was read as one
 /// finger in only 52 to 66% of frames while the hand moved. The pinch distance stayed
 /// 0.01 to 0.17 through whole drags, whatever the other fingers looked like.
+// The preview window draws what the engine is doing, so the engine says so: whether it is
+// armed, which pose decides what a movement means, and whether a pinch holds the page.
+@Suite("Engine state for the preview")
+struct EngineStateTests {
+    @Test("it starts idle, is armed after the palm is held, and idle again after a fist")
+    func armedState() {
+        var rig = Rig()
+        #expect(!rig.engine.isArmed)
+        rig.hold(for: 0.8)
+        #expect(rig.engine.isArmed)
+        rig.hold(for: 0.8, pose: .fist)
+        #expect(!rig.engine.isArmed)
+    }
+
+    @Test("the mode is the pose that currently decides what a movement means")
+    func modeState() {
+        var rig = Rig.armed()
+        #expect(rig.engine.currentMode == .openPalm)
+        rig.show(.oneFinger)
+        #expect(rig.engine.currentMode == .oneFinger)
+        rig.show(.twoFingers)
+        #expect(rig.engine.currentMode == .twoFingers)
+    }
+
+    @Test("grabbing is true only while a pinch holds the page")
+    func grabState() {
+        var rig = Rig.armed()
+        #expect(!rig.engine.isGrabbing)
+        rig.pinch = 0.08
+        rig.hold(for: 0.3)
+        #expect(rig.engine.isGrabbing)
+        rig.pinch = 1.5
+        rig.hold(for: 0.4)
+        #expect(!rig.engine.isGrabbing)
+    }
+}
+
 @Suite("Pinch scroll")
 struct PinchScrollTests {
     private let gain = GestureConfig().pinchScrollGain

@@ -20,6 +20,8 @@ struct Options {
     var focusOnly = false
     /// `--focus-web`: put the cursor in the browser page's text box once and exit.
     var focusWebOnly = false
+    /// `--preview`: a small floating window with the camera, the hand and the state.
+    var preview = false
     var history = false
     var invertScroll = false
     var rateScroll = false
@@ -32,7 +34,7 @@ airswipe: switch screens and scroll by moving your hand in the air.
 
 USAGE
   airswipe [--live] [--voice] [--voice-key CHORD] [--voice-target auto|claude|frontmost]
-           [--history] [--invert-scroll] [--rate-scroll] [--no-mirror] [--debug]
+           [--history] [--invert-scroll] [--rate-scroll] [--no-mirror] [--preview] [--debug]
   airswipe --focus-claude
   airswipe --focus-web
 
@@ -56,6 +58,9 @@ OPTIONS
   --invert-scroll  Flip the scroll direction.
   --rate-scroll    Scroll by hand height (speed) instead of following the hand.
   --no-mirror      Do not mirror the camera horizontally.
+  --preview        Show a small floating window (bottom right, above everything, click-through)
+                   with your camera, the hand drawn on it, and what AirSwipe is doing. Handy
+                   for screen recordings of a demo.
   --debug          Print what the camera layer sees about ten times a second.
   -h, --help       Show this help.
 
@@ -99,6 +104,7 @@ func parseOptions(_ arguments: [String]) -> Options {
         case "--invert-scroll": options.invertScroll = true
         case "--rate-scroll": options.rateScroll = true
         case "--no-mirror": options.mirror = false
+        case "--preview": options.preview = true
         case "--debug": options.debug = true
         case "-h", "--help":
             print(usage)
@@ -178,7 +184,8 @@ gestureConfig.sendEnabled = options.voice
 
 let engine = GestureEngine(config: gestureConfig)
 let mapper = ActionMapper()
-let tracker = HandTracker(mirrorX: options.mirror, collectDiagnostics: options.debug)
+let tracker = HandTracker(mirrorX: options.mirror, collectDiagnostics: options.debug,
+                          collectSkeleton: options.preview)
 
 let sink: ActionSink
 if options.live {
@@ -222,6 +229,16 @@ var debugLastPrint = 0.0
 var debugRejection: String?
 var armedNow = false
 
+/// The floating preview window (`--preview`). Created on the main thread before the camera
+/// starts; the camera queue only reads it.
+var preview: PreviewWindow?
+
+/// Names what just happened in the preview window, if there is one.
+func flash(_ text: String) {
+    guard preview != nil else { return }
+    DispatchQueue.main.async { preview?.flash(text) }
+}
+
 /// "[ 12.3s] " in debug mode, so events can be lined up with the frame lines.
 func stamp(_ time: Double) -> String {
     guard options.debug, let origin = debugOrigin else { return "" }
@@ -262,6 +279,7 @@ let camera = CameraSource { pixelBuffer, time in
         case .armed:
             armedNow = true
             print("\(stamp(time))armed: hand gestures are on")
+            flash("armed")
             DispatchQueue.main.async { status.setArmed(true) }
         case .disarmed:
             armedNow = false
@@ -273,17 +291,21 @@ let camera = CameraSource { pixelBuffer, time in
             case nil: why = "unknown"
             }
             print("\(stamp(time))disarmed (\(why))")
+            flash("stopped: \(why)")
             DispatchQueue.main.async { status.setArmed(false) }
         case .swipe(let direction):
             print("\(stamp(time))swipe \(direction == .right ? "right" : "left")")
+            flash("swipe \(direction == .right ? "right" : "left")")
         case .scroll:
             break
         case .circle:
             let recording = mapper.voiceActive
             print("\(stamp(time))voice: \(recording ? "start" : "stop") dictation (circle)")
+            flash(recording ? "circle: dictation on" : "circle: dictation off")
             DispatchQueue.main.async { status.setRecording(recording) }
         case .send:
             print("\(stamp(time))send: thumbs up held")
+            flash("thumbs up: sent")
             // Sending also stops dictation if it was running.
             DispatchQueue.main.async { status.setRecording(false) }
         }
@@ -292,7 +314,25 @@ let camera = CameraSource { pixelBuffer, time in
         }
     }
 
+    if let window = preview {
+        // Everything the window draws is copied here, on the camera queue, then drawn on the
+        // main thread.
+        let skeleton = tracker.skeleton
+        let armed = engine.isArmed
+        let mode = engine.currentMode
+        let grabbing = engine.isGrabbing
+        DispatchQueue.main.async {
+            window.update(skeleton: skeleton, armed: armed, mode: mode, grabbing: grabbing)
+        }
+    }
+
     sink.endFrame()
+}
+
+if options.preview {
+    let window = PreviewWindow(session: camera.session, mirrored: options.mirror)
+    window.show()
+    preview = window
 }
 
 do {

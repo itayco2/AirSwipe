@@ -98,6 +98,15 @@ public final class GestureEngine {
         self.pinchScroller = PinchScroller(config: config)
     }
 
+    /// Whether the engine is listening: it was armed by an open palm and has not stopped.
+    public var isArmed: Bool { state == .armed }
+
+    /// The pose that currently decides what a movement means (only meaningful while armed).
+    public var currentMode: HandPose { mode }
+
+    /// Whether a pinch is holding the page right now, so the hand is scrolling it.
+    public var isGrabbing: Bool { pinchScroller.isEngaged }
+
     /// One line describing the engine's internal state, for debugging.
     public var diagnostics: String {
         let guardText = awaitingReturn ? String(format: "ON(x=%.2f)", returnHome) : "off"

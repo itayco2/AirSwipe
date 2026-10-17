@@ -20,6 +20,7 @@ final class HandTracker {
     private let handler = VNSequenceRequestHandler()
     private let mirrorX: Bool
     private let collectDiagnostics: Bool
+    private let collectSkeleton: Bool
 
     /// Joints below this confidence are treated as not seen.
     private let minimumConfidence: Float = 0.3
@@ -39,6 +40,20 @@ final class HandTracker {
     /// The thumb, from its base out to the tip. Only used to tell a thumbs up from a fist.
     private let thumbJoints: [Joint] = [.thumbCMC, .thumbMP, .thumbIP, .thumbTip]
 
+    /// Lines to draw the hand with: each finger from the wrist to its tip, and the knuckle line.
+    /// Points are in the camera image, 0...1 with the origin bottom left and not mirrored.
+    /// Empty when no hand was found. Only filled in when `collectSkeleton` is on.
+    private(set) var skeleton: [[CGPoint]] = []
+
+    private let skeletonChains: [[Joint]] = [
+        [.wrist, .thumbCMC, .thumbMP, .thumbIP, .thumbTip],
+        [.wrist, .indexMCP, .indexPIP, .indexDIP, .indexTip],
+        [.wrist, .middleMCP, .middlePIP, .middleDIP, .middleTip],
+        [.wrist, .ringMCP, .ringPIP, .ringDIP, .ringTip],
+        [.wrist, .littleMCP, .littlePIP, .littleDIP, .littleTip],
+        [.indexMCP, .middleMCP, .ringMCP, .littleMCP],
+    ]
+
     /// One line describing the latest frame: whether a hand was found, how
     /// straight each finger is, which pose that makes, and where the knuckles are.
     /// Only filled in when diagnostics are on.
@@ -48,14 +63,17 @@ final class HandTracker {
     ///   - mirrorX: Camera frames are not mirrored, so a hand moving to the user's
     ///     right moves left in the image. Mirroring puts x in the user's frame.
     ///   - collectDiagnostics: Record what was seen each frame in `diagnostics`.
-    init(mirrorX: Bool = true, collectDiagnostics: Bool = false) {
+    ///   - collectSkeleton: Record the hand's lines in `skeleton` for the preview window.
+    init(mirrorX: Bool = true, collectDiagnostics: Bool = false, collectSkeleton: Bool = false) {
         self.mirrorX = mirrorX
         self.collectDiagnostics = collectDiagnostics
+        self.collectSkeleton = collectSkeleton
         request.maximumHandCount = 1
     }
 
     /// Returns nil when no hand is visible in this frame.
     func sample(from pixelBuffer: CVPixelBuffer) -> HandSample? {
+        skeleton = []
         do {
             try handler.perform([request], on: pixelBuffer)
         } catch {
@@ -98,6 +116,10 @@ final class HandTracker {
         // Pinch: only trusted when both fingertips are read well. Unlike the pose, it is a
         // distance between two points, so it holds up while the hand moves.
         let pinch = pinchReading(observation)
+
+        if collectSkeleton {
+            skeleton = skeletonChains.map { chain in chain.compactMap(point) }.filter { $0.count >= 2 }
+        }
 
         if collectDiagnostics {
             diagnostics = "hand=yes " + describe(observation, fingers: fingers, thumb: thumb,
