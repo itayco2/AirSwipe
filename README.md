@@ -148,6 +148,7 @@ Security > Screen & System Audio Recording); allow it and run the script again.
 | `--invert-scroll` | Flip the scroll direction (pinch and fine scroll) |
 | `--rate-scroll` | Fine scroll by hand height (speed) instead of following the hand |
 | `--no-mirror` | Do not mirror the camera horizontally |
+| `--preview` | A small floating window (bottom right, above everything including full-screen apps, click-through) showing your camera, the hand drawn on it and what AirSwipe is doing (`ARMED`, `GRAB`, the last gesture). Handy for recording a demo |
 | `--debug` | Print what the camera layer sees about ten times a second: engine mode, `grab=` (page held by a pinch), per-finger straightness, pose, thumb, `pinch=distance/confidence`, knuckle position. A move that was big enough to be a swipe but was turned down ends the line with `REJECTED` and the reason |
 
 ## If it feels wrong
