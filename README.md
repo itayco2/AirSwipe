@@ -168,7 +168,7 @@ Every threshold is a field of `GestureConfig` in `Sources/AirSwipeCore/Types.swi
 | It stops when you did not mean to | A fist must be held still: `fistStillnessRadius` (0.06) and `fistDisarmDuration` (0.5 s) |
 | It never arms | Hold the palm flat and still, face the camera, add light |
 | Swipes are missed | Lower `swipeMinDistance` (0.12) or raise `swipeWindow`. Diagonal moves are ignored: `swipeMaxVerticalRatio` |
-| A swipe is ignored right after another | The return guard waits for your hand to come back to where the swipe started; rest about 1.5 s, or tune `swipeReturnGuard` / `swipeHomeRadius` |
+| A swipe is ignored right after another one, or a swipe back does nothing | The return guard treats the move back toward where the last swipe started as a return, not a swipe, and a deliberate swipe the other way looks identical. Hold your hand still for about 1.5 s after a swipe (or bring it back to the middle and pause), then swipe the other way. Or tune `swipeRestDuration` / `swipeReturnGuard` / `swipeHomeRadius` |
 | One or two fingers are not recognized | `--debug`: `str=` is each finger's straightness (extended ≈ 0.98 to 1.00, curled ≤ 0.9). Curl the others tighter, or tune `extendedStraightness` / `curledStraightness` |
 | The circle does nothing | Arm first, use an open palm, draw one loop that closes within 2 s and spans at least 0.10 of the picture. Tune `circleMinTurn`, `circleMinSize`, `circleWindow` |
 | The circle switches the whole screen to the Claude app | That was the old behaviour (`--voice-target claude`): the start circle brought Claude forward. The default is now `auto`, which dictates in the app in front. If you still see it, check you did not pass `--voice-target claude` |
