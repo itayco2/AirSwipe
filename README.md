@@ -7,6 +7,11 @@ Apple's Vision framework, everything runs on-device, and no frame is ever stored
 Written in Swift for macOS. No dependencies beyond Apple's frameworks, and the
 Xcode Command Line Tools are enough to build it.
 
+**Demo:** [watch the 27 s video](https://github.com/itayco2/AirSwipe/releases/download/v1.0.0/AirSwipe-demo.mp4)
+(24 MB mp4, it downloads). A screen recording with the live camera preview in the
+corner: a swipe to another screen, a circle that starts dictation in a Google search,
+a pinch-scroll through the results, and a fist to stop.
+
 ## What it does
 
 | You show | It does |
