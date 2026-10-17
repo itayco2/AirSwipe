@@ -215,6 +215,12 @@ and the [voice design](docs/superpowers/specs/2026-10-16-voice-circle-design.md)
   open, which costs CPU and battery.
 - Your fingers and knuckles have to stay inside the picture; if the hand leaves the
   frame for about a second it stops (`disarmed (hand out of view)`).
+- After a swipe, the move back is ignored on purpose, so bringing your hand back does not
+  swipe the other way. A deliberate swipe the other way straight after looks identical, so
+  it is ignored too: pause about 1.5 s first. This is a real ambiguity, not a threshold:
+  in recorded runs, swipes peaked at 0.5 to 1.0 frame-widths per second and 0.13 to 0.18
+  across, and the blocked returns at 0.6 to 1.0 and 0.12 to 0.23, so speed and size cannot
+  tell them apart (scrolling avoids it with the pinch, which has an explicit let-go).
 - It sends keyboard shortcuts and scroll events, not true trackpad gestures, so a swipe
   only does something where `Ctrl+←/→` (or `Cmd+[` / `Cmd+]` with `--history`) would.
 - Voice finds the Claude message box by its accessibility label ("Prompt"), so an app
